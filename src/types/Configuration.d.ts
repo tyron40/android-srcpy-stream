@@ -45,4 +45,7 @@ export interface Configuration {
     runGoogTracker?: boolean;
     announceGoogTracker?: boolean;
     remoteHostList?: HostsItem[];
+    autoGlmEnabled?: boolean;
+    autoGlmBaseUrl?: string;
+    autoGlmTimeoutMs?: number;
 }

@@ -30,6 +30,8 @@ import { ACTION } from '../../../common/Action';
 import { StreamReceiverScrcpy } from './StreamReceiverScrcpy';
 import { ParamsDeviceTracker } from '../../../types/ParamsDeviceTracker';
 import { ScrcpyFilePushStream } from '../filePush/ScrcpyFilePushStream';
+import { MultiDeviceSyncManager } from './MultiDeviceSyncManager';
+import { MirrorAction } from '../../../types/MirrorAction';
 
 type StartParams = {
     udid: string;
@@ -60,6 +62,12 @@ export class StreamClientScrcpy
     private filePushHandler?: FilePushHandler;
     private fitToScreen?: boolean;
     private readonly streamReceiver: StreamReceiverScrcpy;
+    private readonly syncManager = new MultiDeviceSyncManager();
+    private deviceView?: HTMLElement;
+    private syncControls?: HTMLElement;
+    private pointerStart?: { x: number; y: number; t: number };
+    private readonly pointerMoveThreshold = 12;
+    private readonly minSwipeDurationMs = 120;
 
     public static registerPlayer(playerClass: PlayerClass): void {
         if (playerClass.isSupported()) {
@@ -259,6 +267,23 @@ export class StreamClientScrcpy
         this.filePushHandler = undefined;
         this.touchHandler?.release();
         this.touchHandler = undefined;
+        this.syncManager.release();
+        this.pointerStart = undefined;
+
+        if (this.syncControls && this.syncControls.parentElement) {
+            this.syncControls.parentElement.removeChild(this.syncControls);
+        }
+        this.syncControls = undefined;
+
+        if (this.deviceView) {
+            const card = this.deviceView.closest('.sync-device-card');
+            if (card && card.parentElement) {
+                card.parentElement.removeChild(card);
+            } else if (this.deviceView.parentElement) {
+                this.deviceView.parentElement.removeChild(this.deviceView);
+            }
+        }
+        this.deviceView = undefined;
     };
 
     public startStream({ udid, player, playerName, videoSettings, fitToScreen }: StartParams): void {
@@ -293,6 +318,8 @@ export class StreamClientScrcpy
 
         const deviceView = document.createElement('div');
         deviceView.className = 'device-view';
+        this.deviceView = deviceView;
+
         const stop = (ev?: string | Event) => {
             if (ev && ev instanceof Event && ev.type === 'error') {
                 console.error(TAG, ev);
@@ -325,15 +352,31 @@ export class StreamClientScrcpy
         player.setParent(video);
         player.pause();
 
-        document.body.appendChild(deviceView);
+        const workspace = StreamClientScrcpy.getOrCreateWorkspace();
+        const card = document.createElement('div');
+        card.className = 'sync-device-card';
+        const cardHeader = document.createElement('div');
+        cardHeader.className = 'sync-device-card-header';
+        cardHeader.innerText = udid;
+        card.appendChild(cardHeader);
+        card.appendChild(deviceView);
+
+        const syncControls = this.createSyncControls(udid);
+        this.syncControls = syncControls;
+        card.appendChild(syncControls);
+        workspace.appendChild(card);
+
         if (fitToScreen) {
             const newBounds = this.getMaxSize();
             if (newBounds) {
                 videoSettings = StreamClientScrcpy.createVideoSettingsWithBounds(videoSettings, newBounds);
             }
         }
+
         this.applyNewVideoSettings(videoSettings, false);
+
         const element = player.getTouchableElement();
+        this.bindMirrorCaptureListeners(element, udid, player);
         const logger = new DragAndPushLogger(element);
         this.filePushHandler = new FilePushHandler(element, new ScrcpyFilePushStream(this.streamReceiver));
         this.filePushHandler.addEventListener(logger);
@@ -365,6 +408,266 @@ export class StreamClientScrcpy
 
     public onKeyEvent(event: KeyCodeControlMessage): void {
         this.sendMessage(event);
+    }
+
+    private createSyncControls(udid: string): HTMLElement {
+        const holder = document.createElement('div');
+        holder.className = 'sync-controls';
+
+        const enabledLabel = document.createElement('label');
+        enabledLabel.innerText = 'Broadcast my actions from this master to selected targets ';
+        const enabled = document.createElement('input');
+        enabled.type = 'checkbox';
+        enabledLabel.appendChild(enabled);
+        holder.appendChild(enabledLabel);
+
+        const help = document.createElement('div');
+        help.className = 'sync-help';
+        help.innerText = 'Devices receiving mirrored actions';
+        holder.appendChild(help);
+
+        const select = document.createElement('select');
+        select.multiple = true;
+        select.size = 6;
+
+        const refreshTargets = (): void => {
+            const selected = new Set(Array.from(select.selectedOptions).map((opt) => opt.value));
+            select.innerHTML = '';
+            const streams = DeviceTracker.getKnownDeviceStreams();
+            streams.forEach((item) => {
+                if (item.udid === udid) {
+                    return;
+                }
+                const option = document.createElement('option');
+                option.value = item.udid;
+                option.text = item.udid;
+                option.selected = selected.has(item.udid);
+                select.appendChild(option);
+            });
+        };
+
+        const applyTargets = (): void => {
+            const targets = Array.from(select.selectedOptions).map((opt) => ({ udid: opt.value }));
+            this.syncManager.setMasterUdid(udid);
+            this.syncManager.setTargets(targets);
+        };
+
+        enabled.onchange = () => {
+            this.syncManager.setEnabled(enabled.checked);
+            select.disabled = !enabled.checked;
+            refreshTargets();
+            applyTargets();
+        };
+
+        select.disabled = true;
+        select.onchange = () => {
+            refreshTargets();
+            applyTargets();
+        };
+
+        refreshTargets();
+        holder.appendChild(select);
+        return holder;
+    }
+
+    private bindMirrorCaptureListeners(element: HTMLElement, udid: string, player: BasePlayer): void {
+        element.addEventListener('pointerdown', (event: PointerEvent) => {
+            this.pointerStart = { x: event.clientX, y: event.clientY, t: Date.now() };
+        });
+
+        element.addEventListener('pointerup', async (event: PointerEvent) => {
+            if (!this.syncManager.isEnabled()) {
+                return;
+            }
+            if (this.syncManager.getMasterUdid() !== udid) {
+                return;
+            }
+            if (!this.syncManager.getTargetUdids().length) {
+                return;
+            }
+
+            const start = this.pointerStart;
+            this.pointerStart = undefined;
+            if (!start) {
+                return;
+            }
+
+            const endX = event.clientX;
+            const endY = event.clientY;
+            const dx = endX - start.x;
+            const dy = endY - start.y;
+            const moved = Math.hypot(dx, dy) >= this.pointerMoveThreshold;
+
+            if (moved) {
+                const duration = Math.max(this.minSwipeDurationMs, Date.now() - start.t);
+                const action = this.makeSwipeAction(element, player, start.x, start.y, endX, endY, duration);
+                if (!action) {
+                    return;
+                }
+                await this.dispatchMirroredAction(udid, action, { sx: start.x, sy: start.y, ex: endX, ey: endY });
+                return;
+            }
+
+            const action = this.makeTapAction(element, player, endX, endY);
+            if (!action) {
+                return;
+            }
+            await this.dispatchMirroredAction(udid, action, { x: endX, y: endY });
+        });
+    }
+
+    private getDeviceSize(player: BasePlayer): { width: number; height: number } | undefined {
+        const info = player.getScreenInfo();
+        if (!info) {
+            return;
+        }
+        const size = info.videoSize;
+        if (!size || !size.width || !size.height) {
+            return;
+        }
+        return { width: size.width, height: size.height };
+    }
+
+    private toDevicePoint(
+        element: HTMLElement,
+        player: BasePlayer,
+        clientX: number,
+        clientY: number,
+    ): { localX: number; localY: number; x: number; y: number } | undefined {
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+            return;
+        }
+        const deviceSize = this.getDeviceSize(player);
+        if (!deviceSize) {
+            return;
+        }
+
+        const localX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+        const localY = Math.max(0, Math.min(rect.height, clientY - rect.top));
+        const x = Math.round((localX / rect.width) * deviceSize.width);
+        const y = Math.round((localY / rect.height) * deviceSize.height);
+        return { localX, localY, x, y };
+    }
+
+    private makeTapAction(
+        element: HTMLElement,
+        player: BasePlayer,
+        clientX: number,
+        clientY: number,
+    ): MirrorAction | undefined {
+        const p = this.toDevicePoint(element, player, clientX, clientY);
+        if (!p) {
+            return;
+        }
+        console.log(
+            TAG,
+            `Captured tap on master at browser(${clientX},${clientY}) local(${Math.round(p.localX)},${Math.round(
+                p.localY,
+            )}) device(${p.x},${p.y})`,
+        );
+        return {
+            type: 'tap',
+            x: p.x,
+            y: p.y,
+        };
+    }
+
+    private makeSwipeAction(
+        element: HTMLElement,
+        player: BasePlayer,
+        startX: number,
+        startY: number,
+        endX: number,
+        endY: number,
+        duration: number,
+    ): MirrorAction | undefined {
+        const p1 = this.toDevicePoint(element, player, startX, startY);
+        const p2 = this.toDevicePoint(element, player, endX, endY);
+        if (!p1 || !p2) {
+            return;
+        }
+        console.log(
+            TAG,
+            `Captured swipe on master browser(${startX},${startY})->(${endX},${endY}) device(${p1.x},${p1.y})->(${p2.x},${p2.y}) duration=${duration}`,
+        );
+        return {
+            type: 'swipe',
+            x1: p1.x,
+            y1: p1.y,
+            x2: p2.x,
+            y2: p2.y,
+            duration,
+        };
+    }
+
+    private async dispatchMirroredAction(
+        masterSerial: string,
+        action: MirrorAction,
+        raw: Record<string, number>,
+    ): Promise<void> {
+        try {
+            console.log(TAG, 'Posted mirror-action', {
+                masterSerial,
+                targetSerials: this.syncManager.getTargetUdids(),
+                action,
+                raw,
+            });
+            const result = await this.syncManager.dispatchAction(action);
+            if (!result) {
+                return;
+            }
+            result.results.forEach((r) => {
+                console.log(TAG, `Target result: ${r.serial} => ${r.ok ? 'success' : 'fail'} ${r.error || ''}`.trim());
+            });
+        } catch (error) {
+            console.error(TAG, 'mirror-action dispatch failed', error);
+        }
+    }
+
+    private static isChatFocusMode(): boolean {
+        const hash = location.hash.replace(/^#!/, '');
+        const parsedQuery = new URLSearchParams(hash);
+        const focus = (parsedQuery.get('focus') || '').toLowerCase();
+        return focus === 'chat';
+    }
+
+    private static applyChatFocusModeIfNeeded(workspace: HTMLElement): void {
+        if (!this.isChatFocusMode()) {
+            return;
+        }
+        document.body.classList.add('chat-focus-mode');
+
+        const devicesRoot = document.getElementById('devices');
+        if (devicesRoot) {
+            devicesRoot.classList.add('chat-focus-hidden');
+        }
+        workspace.classList.add('chat-focus-workspace');
+    }
+
+    private static getOrCreateWorkspace(): HTMLElement {
+        const id = 'sync-multi-device-workspace';
+        const existing = document.getElementById(id);
+        if (existing) {
+            return existing;
+        }
+        const workspace = document.createElement('div');
+        workspace.id = id;
+        workspace.className = 'sync-multi-device-workspace';
+
+        const devicesRoot = document.getElementById('devices');
+        if (devicesRoot && devicesRoot.parentElement) {
+            if (devicesRoot.nextSibling) {
+                devicesRoot.parentElement.insertBefore(workspace, devicesRoot.nextSibling);
+            } else {
+                devicesRoot.parentElement.appendChild(workspace);
+            }
+        } else {
+            document.body.appendChild(workspace);
+        }
+
+        this.applyChatFocusModeIfNeeded(workspace);
+        return workspace;
     }
 
     public sendNewVideoSetting(videoSettings: VideoSettings): void {
@@ -399,8 +702,6 @@ export class StreamClientScrcpy
 
     private applyNewVideoSettings(videoSettings: VideoSettings, saveToStorage: boolean): void {
         let fitToScreen = false;
-
-        // TODO: create control (switch/checkbox) instead
         if (videoSettings.bounds && videoSettings.bounds.equals(this.getMaxSize())) {
             fitToScreen = true;
         }

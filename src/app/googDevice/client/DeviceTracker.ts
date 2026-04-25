@@ -36,6 +36,7 @@ export class DeviceTracker extends BaseDeviceTracker<GoogDeviceDescriptor, never
     private static instancesByUrl: Map<string, DeviceTracker> = new Map();
     protected static tools: Set<Tool> = new Set();
     protected tableId = 'goog_device_list';
+    private static deviceWsByUdid: Map<string, string> = new Map();
 
     public static start(hostItem: HostItem): DeviceTracker {
         const url = this.buildUrlForTracker(hostItem).toString();
@@ -168,6 +169,14 @@ export class DeviceTracker extends BaseDeviceTracker<GoogDeviceDescriptor, never
 
     private static titleToClassName(title: string): string {
         return title.toLowerCase().replace(/\s/g, '_');
+    }
+
+    public static getKnownDeviceStreams(): Array<{ udid: string; wsUrl: string }> {
+        const list: Array<{ udid: string; wsUrl: string }> = [];
+        this.deviceWsByUdid.forEach((wsUrl, udid) => {
+            list.push({ udid, wsUrl });
+        });
+        return list;
     }
 
     protected buildDeviceRow(tbody: Element, device: GoogDeviceDescriptor): void {
@@ -334,6 +343,12 @@ export class DeviceTracker extends BaseDeviceTracker<GoogDeviceDescriptor, never
         }
 
         tbody.appendChild(row);
+        if (hasPid && selectedInterfaceUrl) {
+            DeviceTracker.deviceWsByUdid.set(device.udid, selectedInterfaceUrl);
+        } else {
+            DeviceTracker.deviceWsByUdid.delete(device.udid);
+        }
+
         if (DeviceTracker.CREATE_DIRECT_LINKS && hasPid && selectedInterfaceUrl) {
             this.updateLink({
                 url: selectedInterfaceUrl,

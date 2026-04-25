@@ -39,6 +39,9 @@ export class Config {
             announceApplTracker,
             server,
             remoteHostList: [],
+            autoGlmEnabled: false,
+            autoGlmBaseUrl: 'http://127.0.0.1:8001',
+            autoGlmTimeoutMs: 30000,
         };
         const merged = Object.assign({}, defaultConfig, userConfig);
         merged.server = merged.server.map((item) => this.parseServerItem(item));
@@ -152,5 +155,17 @@ export class Config {
 
     public get servers(): ServerItem[] {
         return this.fullConfig.server;
+    }
+
+    public get autoGlmEnabled(): boolean {
+        return this.fullConfig.autoGlmEnabled;
+    }
+
+    public get autoGlmBaseUrl(): string {
+        return this.fullConfig.autoGlmBaseUrl;
+    }
+
+    public get autoGlmTimeoutMs(): number {
+        return this.fullConfig.autoGlmTimeoutMs;
     }
 }

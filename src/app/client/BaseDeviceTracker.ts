@@ -67,9 +67,17 @@ export abstract class BaseDeviceTracker<DD extends BaseDeviceDescriptor, TE exte
         const a = document.createElement('a');
         a.setAttribute('href', `${protocol}//${hostname}:${port}${pathname}${hash}`);
         a.setAttribute('rel', 'noopener noreferrer');
-        a.setAttribute('target', '_blank');
         a.classList.add(`link-${q.action}`);
         a.innerText = text;
+
+        if (typeof q.action === 'string' && q.action === 'stream') {
+            a.addEventListener('click', (event: MouseEvent) => {
+                event.preventDefault();
+                const url = new URL(a.href);
+                location.hash = url.hash;
+            });
+        }
+
         return a;
     }
 

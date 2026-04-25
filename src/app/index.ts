@@ -4,10 +4,6 @@ import { HostTracker } from './client/HostTracker';
 import { Tool } from './client/Tool';
 
 window.onload = async function (): Promise<void> {
-    const hash = location.hash.replace(/^#!/, '');
-    const parsedQuery = new URLSearchParams(hash);
-    const action = parsedQuery.get('action');
-
     /// #if USE_BROADWAY
     const { BroadwayPlayer } = await import('./player/BroadwayPlayer');
     StreamClientScrcpy.registerPlayer(BroadwayPlayer);
@@ -28,11 +24,6 @@ window.onload = async function (): Promise<void> {
     StreamClientScrcpy.registerPlayer(WebCodecsPlayer);
     /// #endif
 
-    if (action === StreamClientScrcpy.ACTION && typeof parsedQuery.get('udid') === 'string') {
-        StreamClientScrcpy.start(parsedQuery);
-        return;
-    }
-
     /// #if INCLUDE_APPL
     {
         const { DeviceTracker } = await import('./applDevice/client/DeviceTracker');
@@ -51,11 +42,6 @@ window.onload = async function (): Promise<void> {
         const { MsePlayerForQVHack } = await import('./player/MsePlayerForQVHack');
         StreamClientQVHack.registerPlayer(MsePlayerForQVHack);
         /// #endif
-
-        if (action === StreamClientQVHack.ACTION && typeof parsedQuery.get('udid') === 'string') {
-            StreamClientQVHack.start(StreamClientQVHack.parseParameters(parsedQuery));
-            return;
-        }
         /// #endif
 
         /// #if USE_WDA_MJPEG_SERVER
@@ -64,11 +50,6 @@ window.onload = async function (): Promise<void> {
 
         const { MjpegPlayer } = await import('./player/MjpegPlayer');
         StreamClientMJPEG.registerPlayer(MjpegPlayer);
-
-        if (action === StreamClientMJPEG.ACTION && typeof parsedQuery.get('udid') === 'string') {
-            StreamClientMJPEG.start(StreamClientMJPEG.parseParameters(parsedQuery));
-            return;
-        }
         /// #endif
     }
     /// #endif
@@ -77,28 +58,16 @@ window.onload = async function (): Promise<void> {
 
     /// #if INCLUDE_ADB_SHELL
     const { ShellClient } = await import('./googDevice/client/ShellClient');
-    if (action === ShellClient.ACTION && typeof parsedQuery.get('udid') === 'string') {
-        ShellClient.start(ShellClient.parseParameters(parsedQuery));
-        return;
-    }
     tools.push(ShellClient);
     /// #endif
 
     /// #if INCLUDE_DEV_TOOLS
     const { DevtoolsClient } = await import('./googDevice/client/DevtoolsClient');
-    if (action === DevtoolsClient.ACTION) {
-        DevtoolsClient.start(DevtoolsClient.parseParameters(parsedQuery));
-        return;
-    }
     tools.push(DevtoolsClient);
     /// #endif
 
     /// #if INCLUDE_FILE_LISTING
     const { FileListingClient } = await import('./googDevice/client/FileListingClient');
-    if (action === FileListingClient.ACTION) {
-        FileListingClient.start(FileListingClient.parseParameters(parsedQuery));
-        return;
-    }
     tools.push(FileListingClient);
     /// #endif
 
@@ -108,5 +77,96 @@ window.onload = async function (): Promise<void> {
             DeviceTracker.registerTool(tool);
         });
     }
+
+    const applyFocusMode = (): void => {
+        const hash = location.hash.replace(/^#!/, '');
+        const parsedQuery = new URLSearchParams(hash);
+        const focus = (parsedQuery.get('focus') || '').toLowerCase();
+        if (focus === 'chat') {
+            document.body.classList.add('chat-focus-mode');
+            const devicesRoot = document.getElementById('devices');
+            if (devicesRoot) {
+                devicesRoot.classList.add('chat-focus-hidden');
+            }
+        } else {
+            document.body.classList.remove('chat-focus-mode');
+            const devicesRoot = document.getElementById('devices');
+            if (devicesRoot) {
+                devicesRoot.classList.remove('chat-focus-hidden');
+            }
+        }
+    };
+
     HostTracker.start();
+    applyFocusMode();
+
+    const handleHashAction = async (): Promise<void> => {
+        const hash = location.hash.replace(/^#!/, '');
+        const parsedQuery = new URLSearchParams(hash);
+        const action = parsedQuery.get('action');
+
+        if (action === StreamClientScrcpy.ACTION && typeof parsedQuery.get('udid') === 'string') {
+            StreamClientScrcpy.start(parsedQuery);
+            return;
+        }
+
+        /// #if INCLUDE_APPL
+        /// #if USE_QVH_SERVER
+        {
+            const { StreamClientQVHack } = await import('./applDevice/client/StreamClientQVHack');
+            if (action === StreamClientQVHack.ACTION && typeof parsedQuery.get('udid') === 'string') {
+                StreamClientQVHack.start(StreamClientQVHack.parseParameters(parsedQuery));
+                return;
+            }
+        }
+        /// #endif
+
+        /// #if USE_WDA_MJPEG_SERVER
+        {
+            const { StreamClientMJPEG } = await import('./applDevice/client/StreamClientMJPEG');
+            if (action === StreamClientMJPEG.ACTION && typeof parsedQuery.get('udid') === 'string') {
+                StreamClientMJPEG.start(StreamClientMJPEG.parseParameters(parsedQuery));
+                return;
+            }
+        }
+        /// #endif
+        /// #endif
+
+        /// #if INCLUDE_ADB_SHELL
+        {
+            const { ShellClient } = await import('./googDevice/client/ShellClient');
+            if (action === ShellClient.ACTION && typeof parsedQuery.get('udid') === 'string') {
+                ShellClient.start(ShellClient.parseParameters(parsedQuery));
+                return;
+            }
+        }
+        /// #endif
+
+        /// #if INCLUDE_DEV_TOOLS
+        {
+            const { DevtoolsClient } = await import('./googDevice/client/DevtoolsClient');
+            if (action === DevtoolsClient.ACTION) {
+                DevtoolsClient.start(DevtoolsClient.parseParameters(parsedQuery));
+                return;
+            }
+        }
+        /// #endif
+
+        /// #if INCLUDE_FILE_LISTING
+        {
+            const { FileListingClient } = await import('./googDevice/client/FileListingClient');
+            if (action === FileListingClient.ACTION) {
+                FileListingClient.start(FileListingClient.parseParameters(parsedQuery));
+                return;
+            }
+        }
+        /// #endif
+    };
+
+    window.onhashchange = () => {
+        applyFocusMode();
+        void handleHashAction();
+    };
+
+    await handleHashAction();
 };

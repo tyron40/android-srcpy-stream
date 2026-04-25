@@ -94,7 +94,7 @@ export abstract class BasePlayer extends TypedEmitter<PlayerEvents> {
         bitrate: 524288,
         maxFps: 24,
         iFrameInterval: 5,
-        bounds: new Size(480, 480),
+        bounds: new Size(240, 426),
         sendFrameMeta: false,
     });
 

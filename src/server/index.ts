@@ -53,6 +53,9 @@ async function loadGoogModules() {
     mw2List.push(FileListing);
     /// #endif
 
+    const { AgentBridge } = await import('./goog-device/mw/AgentBridge');
+    mw2List.push(AgentBridge);
+
     mwList.push(WebsocketProxyOverAdb);
 }
 loadPlatformModulesPromises.push(loadGoogModules());

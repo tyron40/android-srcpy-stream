@@ -2,7 +2,7 @@ import WS from 'ws';
 import { Mw, RequestParameters } from '../../mw/Mw';
 import * as pty from 'node-pty';
 import * as os from 'os';
-import { IPty } from 'node-pty';
+import { IPty, IPtyForkOptions } from 'node-pty';
 import { Message } from '../../../types/Message';
 import { XtermClientMessage, XtermServiceParameters } from '../../../types/XtermMessage';
 import { ACTION } from '../../../common/Action';
@@ -48,19 +48,28 @@ export class RemoteShell extends Mw {
         const { cols = 80, rows = 24 } = params;
         const cwd = env.PWD || '/';
         const file = OS_WINDOWS ? 'adb.exe' : 'adb';
-        const term = pty.spawn(file, ['-s', params.udid, 'shell'], {
+        const options: IPtyForkOptions = {
             name: 'xterm-256color',
             cols,
             rows,
             cwd,
             env,
-            encoding: null,
-        });
-        const send = USE_BINARY ? this.bufferUtf8(5) : this.buffer(5);
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore Documentation is incorrect for `encoding: null`
-        term.on('data', send);
-        term.on('exit', (code: number) => {
+        };
+        // `encoding: null` enables Buffer output for non-windows flows but is not represented
+        // in node-pty typings across all versions.
+        if (USE_BINARY) {
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-ignore
+            options.encoding = null;
+        }
+        const term = pty.spawn(file, ['-s', params.udid, 'shell'], options);
+        if (USE_BINARY) {
+            term.onData(this.bufferUtf8(5) as unknown as (data: string) => void);
+        } else {
+            term.onData(this.buffer(5));
+        }
+        term.onExit(({ exitCode }: { exitCode: number }) => {
+            const code = exitCode;
             if (code === 0) {
                 this.closeCode = 1000;
             } else {

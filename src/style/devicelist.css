@@ -14,7 +14,6 @@
     }
 }
 
-
 body.list {
     height: auto;
     width: auto;
@@ -22,19 +21,22 @@ body.list {
 }
 
 #devices {
-    padding: 20px 0;
-    width: 100%;
-    height: calc(100% - 40px);
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 320px;
+    height: 100vh;
     overflow-y: auto;
+    padding: 12px 10px 18px;
+    box-sizing: border-box;
+    border-right: 1px solid var(--device-border-color);
+    background: var(--device-list-default-color);
+    z-index: 2;
 }
 
 body.stream #devices {
     background-color: var(--device-list-default-color);
-    opacity: .8;
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 3;
+    opacity: 1;
 }
 
 body.list #device_list_menu {
@@ -54,11 +56,11 @@ body.list #device_list_menu {
     color: var(--button-text-color);
 }
 
-#devices .device-list div.device:nth-child(2n+1){
+#devices .device-list div.device:nth-child(2n + 1) {
     background-color: var(--device-list-default-color);
 }
 
-#devices .device-list div.device:nth-child(2n){
+#devices .device-list div.device:nth-child(2n) {
     background-color: var(--device-list-stripe-color);
 }
 
@@ -114,9 +116,6 @@ body.list #device_list_menu {
     bottom: 0;
     left: 0;
     width: 100%;
-}
-
-#devices .device-list {
     border-spacing: 0;
     border-collapse: collapse;
     font-family: monospace;
@@ -124,26 +123,33 @@ body.list #device_list_menu {
 }
 
 #devices .device-list div.device {
-    padding: 5px 20px 5px;
+    margin: 0 0 10px;
+    border: 1px solid var(--device-border-color);
+    border-radius: 10px;
+    padding: 10px 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
 }
 
 #devices .device-list div.device:hover {
-    background-color: var(--device-list-hover-color)
+    background-color: var(--device-list-hover-color);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
 }
 
 #devices .device-list div.device select {
     color: var(--text-color);
+    border: 1px solid var(--device-border-color);
+    border-radius: 999px;
+    padding: 2px 8px;
     background-color: var(--main-bg-color);
     margin-left: 0;
-    border: none;
 }
 
 #devices .device-list div.device:hover select {
-    background-color: var(--device-list-hover-color);;
+    background-color: var(--device-list-hover-color);
 }
 
 #devices .device-list div.desc-block {
-    margin: .3em;
+    margin: 0.3em;
     display: inline-flex;
 }
 
@@ -155,7 +161,9 @@ body.list #device_list_menu {
 #devices .device-list div.desc-block.server_pid,
 #devices .device-list div.desc-block.net_interface {
     border: 1px solid var(--device-border-color);
-    border-radius: .3em;
+    border-radius: 999px;
+    padding: 2px 8px;
+    background: rgba(148, 163, 184, 0.08);
     overflow: hidden;
     white-space: nowrap;
 }
@@ -165,11 +173,11 @@ body.list #device_list_menu {
 }
 
 #devices .device-list div.desc-block button {
-    fill: var(--text-color)
+    fill: var(--text-color);
 }
 
 #devices .device-list div.desc-block button > span {
-    padding: 0 .5em;
+    padding: 0 0.5em;
 }
 
 #devices .device-list div.desc-block button > span,
@@ -229,7 +237,185 @@ body.list #device_list_menu {
 }
 
 #devices .tracker-name {
-    padding: 5px 20px 5px;
-    font-size: larger;
-    font-weight: bolder;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--device-border-color);
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 700;
+    background: linear-gradient(90deg, rgba(59, 130, 246, 0.12), rgba(16, 185, 129, 0.1));
+}
+
+.sync-multi-device-workspace {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+    margin-top: 0;
+    margin-left: 320px;
+    padding: 12px;
+    width: calc(100% - 320px);
+    max-width: calc(100% - 320px);
+    box-sizing: border-box;
+    align-items: start;
+    justify-content: start;
+    clear: both;
+    position: relative;
+    z-index: 1;
+    background: linear-gradient(180deg, rgba(30, 41, 59, 0.04), rgba(30, 41, 59, 0));
+    border-top: none;
+    min-height: 100vh;
+}
+
+.sync-device-card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--device-list-default-color);
+    border: 1px solid var(--device-border-color);
+    border-radius: 14px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+    transition: transform 0.15s ease, box-shadow 0.2s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.sync-device-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.16);
+}
+
+.sync-device-card-header {
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--device-border-color);
+    background: linear-gradient(90deg, rgba(59, 130, 246, 0.14), rgba(16, 185, 129, 0.12));
+    color: var(--text-color);
+}
+
+.sync-device-card .device-view {
+    display: grid;
+    grid-template-columns: 34px 1fr 34px;
+    align-items: start;
+    justify-content: stretch;
+    gap: 6px;
+    padding: 8px;
+}
+
+.sync-device-card .device-view .video {
+    width: 100%;
+    max-width: 180px;
+    min-height: 320px;
+    max-height: 320px;
+    aspect-ratio: 9 / 16;
+    margin: 0 auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    border-radius: 10px;
+    background: #000;
+}
+
+.sync-device-card .device-view .video canvas,
+.sync-device-card .device-view .video video {
+    width: 100% !important;
+    max-width: 180px !important;
+    height: 320px !important;
+    max-height: 320px !important;
+    border-radius: 10px;
+    object-fit: contain;
+}
+
+.sync-controls {
+    border-top: 1px solid var(--device-border-color);
+    padding: 10px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(148, 163, 184, 0.06);
+}
+
+.sync-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.sync-controls select {
+    width: 100%;
+    min-height: 92px;
+    box-sizing: border-box;
+    border: 1px solid var(--device-border-color);
+    border-radius: 8px;
+    padding: 6px;
+    background: var(--main-bg-color);
+}
+
+body.chat-focus-mode #devices.chat-focus-hidden {
+    display: none !important;
+}
+
+body.chat-focus-mode .sync-multi-device-workspace.chat-focus-workspace {
+    margin-top: 0;
+    padding-top: 10px;
+    border-top: none;
+}
+
+body.chat-focus-mode .sync-device-card {
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.14);
+}
+
+body.chat-focus-mode .sync-device-card .sync-controls {
+    display: none;
+}
+
+@media (max-width: 1100px) {
+    #devices {
+        position: static;
+        width: 100%;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--device-border-color);
+    }
+
+    .sync-multi-device-workspace {
+        margin-left: 0;
+        width: 100%;
+        max-width: 100%;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    }
+}
+
+@media (max-width: 900px) {
+    .sync-multi-device-workspace {
+        grid-template-columns: 1fr;
+        justify-items: center;
+        padding: 12px;
+    }
+
+    .sync-device-card {
+        max-width: min(94vw, 360px);
+    }
+
+    .sync-device-card .device-view {
+        grid-template-columns: 30px 1fr 30px;
+    }
+
+    .sync-device-card .device-view .video {
+        max-width: 160px;
+        min-height: 284px;
+        max-height: 284px;
+    }
+
+    .sync-device-card .device-view .video canvas,
+    .sync-device-card .device-view .video video {
+        max-width: 160px !important;
+        height: 284px !important;
+        max-height: 284px !important;
+    }
 }

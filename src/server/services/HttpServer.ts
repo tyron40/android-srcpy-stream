@@ -8,6 +8,9 @@ import { Config } from '../Config';
 import { TypedEmitter } from '../../common/TypedEmitter';
 import * as process from 'process';
 import { EnvName } from '../EnvName';
+import { MirrorActionService } from '../goog-device/services/MirrorActionService';
+import { MirrorActionRequest } from '../../types/MirrorAction';
+import { ControlCenter as GoogControlCenter } from '../goog-device/services/ControlCenter';
 
 const DEFAULT_STATIC_DIR = path.join(__dirname, './public');
 
@@ -76,6 +79,40 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
 
     public async start(): Promise<void> {
         this.mainApp = express();
+        this.mainApp.use(express.json({ limit: '1mb' }));
+
+        this.mainApp.post('/mirror-action', async (req, res) => {
+            try {
+                const payload = req.body as MirrorActionRequest;
+                const result = await MirrorActionService.execute(payload);
+                res.status(200).json(result);
+            } catch (error: unknown) {
+                const message = error instanceof Error ? error.message : String(error);
+                res.status(400).json({
+                    ok: false,
+                    error: message,
+                });
+            }
+        });
+
+        this.mainApp.get('/devices', async (_req, res) => {
+            try {
+                const controlCenter = GoogControlCenter.getInstance();
+                await controlCenter.init();
+                const devices = controlCenter
+                    .getDevices()
+                    .filter((d) => d.state === 'device')
+                    .map((d) => d.udid);
+                res.status(200).json({ devices });
+            } catch (error: unknown) {
+                const message = error instanceof Error ? error.message : String(error);
+                res.status(500).json({
+                    ok: false,
+                    error: message,
+                });
+            }
+        });
+
         if (HttpServer.SERVE_STATIC && HttpServer.PUBLIC_DIR) {
             this.mainApp.use(PATHNAME, express.static(HttpServer.PUBLIC_DIR));
 
