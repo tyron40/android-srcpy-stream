@@ -2,3 +2,9 @@
 /dist
 /build
 /.idea
+
+# Local Android AI runtime and secrets
+/android-agent/.venv/
+/android-agent/.env
+/android-agent/__pycache__/
+/android-agent/*.pyc

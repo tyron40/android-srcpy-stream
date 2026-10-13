@@ -1,3 +1,4 @@
+import { VisualAgentService } from './VisualAgentService';
 import * as http from 'http';
 import * as https from 'https';
 import path from 'path';
@@ -78,6 +79,7 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
     }
 
     public async start(): Promise<void> {
+        await VisualAgentService.start();
         this.mainApp = express();
         this.mainApp.use(express.json({ limit: '1mb' }));
 
@@ -112,6 +114,59 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
                 });
             }
         });
+
+        // Forward AI tasks to the locally running Python agent. Never expose its key to browsers.
+        // Restrict access to same-origin requests; disable this endpoint on public hosts
+        // unless your deployment has authentication and CSRF protection.
+        const agentUrl = process.env.ANDROID_VISUAL_AGENT_URL || 'http://127.0.0.1:8003';
+        const agentRequest = async (req: express.Request, res: express.Response, target: '/run-task' | '/stop-task'): Promise<void> => {
+            const source = req.get('origin');
+            if (source && source !== `${req.protocol}://${req.get('host')}`) {
+                res.status(403).json({ error: 'Cross-origin AI commands are forbidden' });
+                return;
+            }
+            if (!req.get('origin') && req.get('sec-fetch-site') === 'cross-site') {
+                res.status(403).json({ error: 'Cross-site AI commands are forbidden' });
+                return;
+            }
+            const serial = req.body && req.body.serial;
+            if (typeof serial !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(serial)) {
+                res.status(400).json({ error: 'Valid device serial required' });
+                return;
+            }
+            const controlCenter = GoogControlCenter.getInstance();
+            await controlCenter.init();
+            if (!controlCenter.getDevices().some((d) => d.state === 'device' && d.udid === serial)) {
+                res.status(404).json({ error: 'Device not connected' });
+                return;
+            }
+            if (target === '/run-task' && (typeof req.body.task !== 'string' || !req.body.task.trim() || req.body.task.length > 2000)) {
+                res.status(400).json({ error: 'Task must be 1–2000 characters' });
+                return;
+            }
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 310000);
+            try {
+                const upstream = await fetch(agentUrl + target, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(target === '/run-task' ? {
+                        task: req.body.task,
+                        serial,
+                        max_steps: Math.max(1, Math.min(25, Number(req.body.max_steps) || 15)),
+                    } : { serial }),
+                    signal: controller.signal,
+                });
+                const body = await upstream.text();
+                res.status(upstream.status).type(upstream.headers.get('content-type') || 'application/json').send(body);
+            } catch (error: unknown) {
+                res.status(502).json({ error: 'Android visual agent unavailable: ' + (error instanceof Error ? error.message : String(error)) });
+            } finally {
+                clearTimeout(timer);
+            }
+        };
+        this.mainApp.post('/ai-agent/run', (req, res) => { void agentRequest(req, res, '/run-task').catch((e) => res.status(500).json({ error: String(e) })); });
+        this.mainApp.post('/ai-agent/stop', (req, res) => { void agentRequest(req, res, '/stop-task').catch((e) => res.status(500).json({ error: String(e) })); });
 
         if (HttpServer.SERVE_STATIC && HttpServer.PUBLIC_DIR) {
             this.mainApp.use(PATHNAME, express.static(HttpServer.PUBLIC_DIR));
@@ -173,6 +228,7 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
     }
 
     public release(): void {
+        VisualAgentService.stop();
         this.servers.forEach((item) => {
             item.server.close();
         });
