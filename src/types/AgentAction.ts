@@ -57,6 +57,10 @@ export type AgentTaskRunRequest = {
     masterUdid?: string;
     targets: string[];
     task: AgentTask;
+    repeat?: {
+        durationMinutes: number;
+        intervalMs?: number;
+    };
 };
 
 export type AgentTaskStepResult = {
