@@ -1,3 +1,5 @@
+import '../style/ai-agent.css';
+import { AiAgentPanel } from './client/AiAgentPanel';
 import '../style/app.css';
 import { StreamClientScrcpy } from './googDevice/client/StreamClientScrcpy';
 import { HostTracker } from './client/HostTracker';
@@ -98,6 +100,7 @@ window.onload = async function (): Promise<void> {
     };
 
     HostTracker.start();
+    AiAgentPanel.start();
     applyFocusMode();
 
     const handleHashAction = async (): Promise<void> => {
