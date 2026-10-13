@@ -1,6 +1,5 @@
 /** Unified, per-device AI commands inside the existing scrcpy dashboard. */
 export class AiAgentPanel {
-    private static root: HTMLElement | null = null;
     private static busy = false;
     private static async devices(select: HTMLSelectElement): Promise<void> {
         try {
