@@ -14,6 +14,7 @@ export class AgentActionExecutor {
         await AdbExtended.util.readAll(stream);
     }
 
+    private static readonly maxWaitMs = 60000;
     public static async runAction(udid: string, action: AgentAction, stepIndex: number): Promise<AgentTaskStepResult> {
         const startedAt = Date.now();
         try {
@@ -40,7 +41,7 @@ export class AgentActionExecutor {
                     break;
                 }
                 case 'wait': {
-                    await new Promise((resolve) => setTimeout(resolve, Math.max(0, action.ms)));
+                    await new Promise((resolve) => setTimeout(resolve, Math.min(this.maxWaitMs, Math.max(0, action.ms))));
                     break;
                 }
                 case 'shell': {
