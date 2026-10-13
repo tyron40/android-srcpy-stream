@@ -94,7 +94,28 @@ def loop(serial, stop):
                     update(serial, "observing")
                     event(serial, "screen_changed", {"digest": digest[:16]})
                     # Bound each AI cycle, not total runtime. Stop can interrupt a cycle.
-                    result = run_task(Task(task=config["goal"], serial=serial, max_steps=config["steps_per_cycle"]))
+                    with connect() as db:
+                        recent = db.execute(
+                            "SELECT kind,detail FROM events WHERE serial=? AND kind='cycle' ORDER BY id DESC LIMIT 3",
+                            (serial,),
+                        ).fetchall()
+                    memory = []
+                    for kind, detail in recent:
+                        try:
+                            item = json.loads(detail)
+                            memory.append({"status": item.get("status"), "actions": [
+                                step.get("action", {}).get("action") for step in item.get("steps", [])
+                                if isinstance(step.get("action"), dict)
+                            ]})
+                        except (ValueError, TypeError):
+                            continue
+                    objective = (
+                        "Standing goal: " + config["goal"] +
+                        "\\nYou are in a continuous observation cycle. Act only if new work is needed; "
+                        "if no meaningful action is required, return done. Avoid repeating prior actions. "
+                        "Prior cycle summaries: " + json.dumps(memory)[:1400]
+                    )
+                    result = run_task(Task(task=objective[:2000], serial=serial, max_steps=config["steps_per_cycle"]))
                     status = result.get("status", "unknown")
                     summary = {"status": status, "steps": result.get("steps", [])[-5:]}
                     event(serial, "cycle", summary)
