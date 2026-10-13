@@ -33,7 +33,6 @@ export class AiAgentPanel {
               </form><small id="ai-status">Agent must be running locally on port 8003.</small>
             </div>`;
         document.body.appendChild(root);
-        this.root = root;
         const device = root.querySelector<HTMLSelectElement>('#ai-device')!;
         const command = root.querySelector<HTMLTextAreaElement>('#ai-command')!;
         const history = root.querySelector<HTMLElement>('#ai-history')!;
