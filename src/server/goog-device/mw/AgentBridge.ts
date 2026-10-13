@@ -83,6 +83,16 @@ export class AgentBridge extends Mw {
         if (!data.task || !Array.isArray(data.task.steps) || data.task.steps.length === 0) {
             return 'Task must contain at least one step';
         }
+        if (data.targets.length > 64 || data.task.steps.length > 500) return 'Too many targets or steps';
+        if (data.repeat && (!Number.isFinite(data.repeat.durationMinutes) || data.repeat.durationMinutes <= 0 || data.repeat.durationMinutes > 1440 || (data.repeat.intervalMs !== undefined && (!Number.isFinite(data.repeat.intervalMs) || data.repeat.intervalMs < 1000)))) return 'Repeat requires durationMinutes (0-1440] and intervalMs >= 1000';
+        for (const step of data.task.steps) {
+            if (step.type === 'tap' && (![step.x, step.y].every(Number.isFinite) || step.x < 0 || step.y < 0)) return 'Invalid tap coordinates';
+            if (step.type === 'swipe' && (![step.x1, step.y1, step.x2, step.y2].every(Number.isFinite) || [step.x1,step.y1,step.x2,step.y2].some((v) => v < 0))) return 'Invalid swipe coordinates';
+            if (step.type === 'wait' && (!Number.isFinite(step.ms) || step.ms < 0 || step.ms > 60000)) return 'Invalid wait duration';
+            if (step.type === 'key' && !/^(?:[0-9]{1,3}|KEYCODE_[A-Z0-9_]+)$/.test(String(step.keyCode))) return 'Invalid key code';
+            if (step.type === 'text' && (typeof step.value !== 'string' || step.value.length > 4000)) return 'Invalid text';
+            if (step.type === 'shell') return 'Arbitrary shell commands are disabled for agent tasks';
+        }
         return null;
     }
 
@@ -156,19 +166,34 @@ export class AgentBridge extends Mw {
         }
 
         const results: AgentTaskStepResult[] = [];
-        await Promise.all(targets.map(async (target) => {
-            for (let i = 0; i < request.task.steps.length && !this.stopped; i += 1) {
-                const step = request.task.steps[i];
-                const result = await AgentActionExecutor.runAction(target, step, i);
-                results.push(result);
-                this.sendAgentMessage({ type: 'task-step', data: result });
-                if (!result.ok) break;
+        const deadline = request.repeat ? startedAt + request.repeat.durationMinutes * 60_000 : startedAt;
+        let first = true;
+        do {
+            if (!first) {
+                const waitUntil = Date.now() + (request.repeat?.intervalMs ?? 1000);
+                while (!this.stopped && Date.now() < waitUntil && Date.now() < deadline) {
+                    await new Promise((resolve) => setTimeout(resolve, Math.min(250, waitUntil - Date.now(), deadline - Date.now())));
+                }
             }
-        }));
+            if (this.stopped || (!first && Date.now() >= deadline)) break;
+            first = false;
+            const cycle = await Promise.all(targets.map(async (target) => {
+                let completed = 0;
+                for (let i = 0; i < request.task.steps.length && !this.stopped; i += 1) {
+                    const result = await AgentActionExecutor.runAction(target, request.task.steps[i], i);
+                    results.push(result);
+                    this.sendAgentMessage({ type: 'task-step', data: result });
+                    if (!result.ok) break;
+                    completed++;
+                }
+                return completed === request.task.steps.length;
+            }));
+            if (!cycle.every(Boolean)) break;
+        } while (request.repeat && !this.stopped && Date.now() < deadline);
 
         const finishedAt = Date.now();
         const runResult: AgentTaskRunResult = {
-            ok: !this.stopped && results.length === targets.length * request.task.steps.length && results.every((item) => item.ok),
+            ok: !this.stopped && results.length >= targets.length * request.task.steps.length && results.every((item) => item.ok),
             request,
             results,
             startedAt,
