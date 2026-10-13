@@ -35,7 +35,7 @@ export class AiAgentPanel {
                 <label for="ai-interval">Observe every (seconds)</label>
                 <input id="ai-interval" type="number" min="15" max="3600" value="45" />
                 <div class="ai-actions"><button type="button" id="ai-auto-start">Start continuous mode</button><button type="button" id="ai-auto-stop">Stop continuous mode</button></div>
-                <small id="ai-auto-status">Continuous mode inactive</small>
+                <small id="ai-auto-status">Continuous mode inactive</small><div id="ai-auto-history" role="log" aria-label="Recent autonomous activity"></div>
               </section>
               <form id="ai-form"><label for="ai-command">Command</label><textarea id="ai-command" rows="3" placeholder="Open Settings and find Wi-Fi"></textarea>
                 <div class="ai-actions"><button type="submit" id="ai-send">Run task</button><button type="button" id="ai-stop">Stop</button></div>
@@ -117,6 +117,7 @@ export class AiAgentPanel {
                 autoStatus.textContent = 'Stop requested';
             } catch (error) { autoStatus.textContent = String(error); }
         });
+        const autoHistory = root.querySelector<HTMLElement>('#ai-auto-history')!;
         const refreshAutonomy = async (): Promise<void> => {
             if (!device.value) return;
             try {
@@ -125,6 +126,16 @@ export class AiAgentPanel {
                 const data = await response.json();
                 autoStatus.textContent = 'Status: ' + data.status + (data.worker_alive ? ' (running)' : '');
                 if (data.goal && !goal.value) goal.value = data.goal;
+                const logResponse = await fetch('/ai-agent/autonomy/history?serial=' + encodeURIComponent(device.value));
+                if (logResponse.ok) {
+                    const log = await logResponse.json();
+                    autoHistory.replaceChildren();
+                    for (const item of (log.events || []).slice(0, 5)) {
+                        const line = document.createElement('p');
+                        line.textContent = item.at + ' — ' + item.kind + (item.kind === 'cycle' ? ': ' + (item.detail.status || '') : '');
+                        autoHistory.appendChild(line);
+                    }
+                }
             } catch (_error) { /* Retry on next poll */ }
         };
         device.addEventListener('change', () => { goal.value = ''; void refreshAutonomy(); });
