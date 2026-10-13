@@ -45,7 +45,7 @@ export class VisualAgentService {
             return;
         }
         try {
-            const child = spawn(python, ['-m', 'uvicorn', 'visual_agent:app', '--host', '127.0.0.1', '--port', String(PORT)], {
+            const child = spawn(python, ['-m', 'uvicorn', 'autonomy:app', '--host', '127.0.0.1', '--port', String(PORT)], {
                 cwd: directory,
                 stdio: ['ignore', 'pipe', 'pipe'],
                 windowsHide: true,
