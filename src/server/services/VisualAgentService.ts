@@ -36,7 +36,7 @@ export class VisualAgentService {
             return;
         }
         // Bundled agent lives within the same Git repository, alongside dist.
-        const directory = process.env.ANDROID_AI_DIR || path.resolve(__dirname, '../android-agent');
+        const directory = process.env.ANDROID_AI_DIR || path.resolve(__dirname, '..', 'android-agent');
         const script = path.join(directory, 'visual_agent.py');
         const python = process.env.ANDROID_AI_PYTHON ||
             path.join(directory, process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python');
