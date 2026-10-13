@@ -9,6 +9,7 @@ import {
     AgentTaskRunResult,
     AgentTaskStepResult,
 } from '../../../types/AgentAction';
+import { ControlCenter } from '../services/ControlCenter';
 import { ChannelCode } from '../../../common/ChannelCode';
 import { Config } from '../../Config';
 import { AutoGlmClient } from '../../integrations/autoglm/AutoGlmClient';
@@ -18,6 +19,8 @@ const config = Config.getInstance();
 const autoGlmClient = new AutoGlmClient(config.autoGlmBaseUrl, config.autoGlmTimeoutMs);
 
 export class AgentBridge extends Mw {
+    private stopped = false;
+    private running = false;
     public static readonly TAG = 'AgentBridge';
 
     public static processChannel(ws: Multiplexer, code: string): Mw | undefined {
@@ -61,12 +64,7 @@ export class AgentBridge extends Mw {
         }
 
         if (payload.type === 'stop') {
-            this.sendAgentMessage({
-                type: 'task-error',
-                data: {
-                    error: 'Stop is not implemented yet',
-                },
-            });
+            this.stopped = true;
         }
     }
 
@@ -100,6 +98,19 @@ export class AgentBridge extends Mw {
             return;
         }
 
+        if (this.running) {
+            this.sendAgentMessage({ type: 'task-error', data: { error: 'A task is already running on this connection' } });
+            return;
+        }
+        const connected = new Set(ControlCenter.getInstance().getDevices().filter((device) => device.state === 'device').map((device) => device.udid));
+        const targets = Array.from(new Set(request.targets));
+        const missing = targets.filter((target) => !connected.has(target));
+        if (missing.length) {
+            this.sendAgentMessage({ type: 'task-error', data: { error: `Devices not connected or authorized: ${missing.join(', ')}` } });
+            return;
+        }
+        this.running = true;
+        this.stopped = false;
         const startedAt = Date.now();
         this.sendAgentMessage({
             type: 'task-started',
@@ -109,21 +120,19 @@ export class AgentBridge extends Mw {
             },
         });
 
+        try {
         if (config.autoGlmEnabled) {
             try {
-                const primaryTarget = request.targets[0];
                 const instruction = request.task.steps.map((step) => step.label || step.type).join(' -> ');
-                const autoGlmResult = await autoGlmClient.runTask({
-                    device: primaryTarget,
-                    instruction,
-                    extras: {
-                        request,
-                    },
-                });
+                const aiResults = await Promise.all(targets.map(async (target) => {
+                    if (this.stopped) return false;
+                    const response = await autoGlmClient.runTask({ device: target, instruction, extras: { request } });
+                    return response.ok;
+                }));
 
                 const finishedAt = Date.now();
                 const runResult: AgentTaskRunResult = {
-                    ok: autoGlmResult.ok,
+                    ok: aiResults.every(Boolean) && !this.stopped,
                     request,
                     results: [],
                     startedAt,
@@ -147,21 +156,19 @@ export class AgentBridge extends Mw {
         }
 
         const results: AgentTaskStepResult[] = [];
-        for (const target of request.targets) {
-            for (let i = 0; i < request.task.steps.length; i += 1) {
+        await Promise.all(targets.map(async (target) => {
+            for (let i = 0; i < request.task.steps.length && !this.stopped; i += 1) {
                 const step = request.task.steps[i];
                 const result = await AgentActionExecutor.runAction(target, step, i);
                 results.push(result);
-                this.sendAgentMessage({
-                    type: 'task-step',
-                    data: result,
-                });
+                this.sendAgentMessage({ type: 'task-step', data: result });
+                if (!result.ok) break;
             }
-        }
+        }));
 
         const finishedAt = Date.now();
         const runResult: AgentTaskRunResult = {
-            ok: results.every((item) => item.ok),
+            ok: !this.stopped && results.length === targets.length * request.task.steps.length && results.every((item) => item.ok),
             request,
             results,
             startedAt,
@@ -172,5 +179,8 @@ export class AgentBridge extends Mw {
             type: 'task-finished',
             data: runResult,
         });
+        } finally {
+            this.running = false;
+        }
     }
 }
