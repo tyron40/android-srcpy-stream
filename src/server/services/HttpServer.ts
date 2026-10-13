@@ -168,6 +168,45 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
         this.mainApp.post('/ai-agent/run', (req, res) => { void agentRequest(req, res, '/run-task').catch((e) => res.status(500).json({ error: String(e) })); });
         this.mainApp.post('/ai-agent/stop', (req, res) => { void agentRequest(req, res, '/stop-task').catch((e) => res.status(500).json({ error: String(e) })); });
 
+
+        // Persistent autonomous sessions: start, stop, status and history.
+        const autonomyProxy = async (req: express.Request, res: express.Response, endpoint: string, method: 'GET' | 'POST'): Promise<void> => {
+            const origin = req.get('origin');
+            if (origin && origin !== `${req.protocol}://${req.get('host')}`) {
+                res.status(403).json({ error: 'Cross-origin command rejected' });
+                return;
+            }
+            if (req.get('sec-fetch-site') === 'cross-site') {
+                res.status(403).json({ error: 'Cross-site command rejected' });
+                return;
+            }
+            const serial = method === 'GET' ? req.query.serial : req.body && req.body.serial;
+            if (typeof serial !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(serial)) {
+                res.status(400).json({ error: 'Invalid device serial' });
+                return;
+            }
+            const upstreamUrl = new URL(agentUrl + endpoint);
+            if (method === 'GET') upstreamUrl.searchParams.set('serial', serial);
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 12000);
+            try {
+                const upstream = await fetch(upstreamUrl.toString(), {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: method === 'POST' ? JSON.stringify(req.body) : undefined,
+                    signal: controller.signal,
+                });
+                const payload = await upstream.text();
+                res.status(upstream.status).type('application/json').send(payload);
+            } catch (error: unknown) {
+                res.status(502).json({ error: 'Autonomous agent unavailable: ' + String(error) });
+            } finally { clearTimeout(timer); }
+        };
+        this.mainApp.post('/ai-agent/autonomy/start', (req, res) => { void autonomyProxy(req,res,'/autonomy/start','POST'); });
+        this.mainApp.post('/ai-agent/autonomy/stop', (req, res) => { void autonomyProxy(req,res,'/autonomy/stop','POST'); });
+        this.mainApp.get('/ai-agent/autonomy/status', (req, res) => { void autonomyProxy(req,res,'/autonomy/status','GET'); });
+        this.mainApp.get('/ai-agent/autonomy/history', (req, res) => { void autonomyProxy(req,res,'/autonomy/history','GET'); });
+
         if (HttpServer.SERVE_STATIC && HttpServer.PUBLIC_DIR) {
             this.mainApp.use(PATHNAME, express.static(HttpServer.PUBLIC_DIR));
 
