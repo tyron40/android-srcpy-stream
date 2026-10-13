@@ -75,6 +75,8 @@ def session(serial):
 def loop(serial, stop):
     last_digest = None
     error_count = 0
+    clips_ready = False
+    scroll_direction = 1
     event(serial, "started", {})
     try:
         while not stop.is_set():
@@ -85,6 +87,40 @@ def loop(serial, stop):
                 if not connected(serial):
                     update(serial, "waiting_for_device")
                     if stop.wait(30):
+                        break
+                    continue
+                goal_lower = config["goal"].lower()
+                clips_mode = ("motivational fuel" in goal_lower and
+                              ("short clips" in goal_lower or "shorts" in goal_lower))
+                if clips_mode:
+                    if not clips_ready:
+                        update(serial, "opening_motivational_fuel")
+                        adb(serial, "shell", "monkey", "-p", "com.tyron40.motivationalapp",
+                            "-c", "android.intent.category.LAUNCHER", "1")
+                        if stop.wait(3):
+                            break
+                        navigation = run_task(Task(
+                            task="In the already open Motivation Fuel app, find and open the Short Clips section. "
+                                 "Do not leave this app. Stop once a short clip is visibly playing.",
+                            serial=serial, max_steps=12))
+                        event(serial, "navigation", {"status": navigation.get("status"),
+                                                    "steps": navigation.get("steps", [])[-6:]})
+                        if navigation.get("status") != "completed":
+                            update(serial, "navigation_retry")
+                            if stop.wait(20):
+                                break
+                            continue
+                        clips_ready = True
+                    png, width, height = screenshot(serial)
+                    start_y, end_y = (80, 25) if scroll_direction == 1 else (25, 80)
+                    adb(serial, "shell", "input", "swipe",
+                        str(width // 2), str(round(height * start_y / 100)),
+                        str(width // 2), str(round(height * end_y / 100)), "450")
+                    event(serial, "clip_scroll", {"direction": "up" if scroll_direction == 1 else "down"})
+                    scroll_direction *= -1
+                    update(serial, "scrolling_short_clips")
+                    error_count = 0
+                    if stop.wait(config["check_seconds"]):
                         break
                     continue
                 png, _, _ = screenshot(serial)
