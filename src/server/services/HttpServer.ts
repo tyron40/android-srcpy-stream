@@ -1,3 +1,4 @@
+import { VisualAgentService } from './VisualAgentService';
 import * as http from 'http';
 import * as https from 'https';
 import path from 'path';
@@ -78,6 +79,7 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
     }
 
     public async start(): Promise<void> {
+        await VisualAgentService.start();
         this.mainApp = express();
         this.mainApp.use(express.json({ limit: '1mb' }));
 
@@ -226,6 +228,7 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
     }
 
     public release(): void {
+        VisualAgentService.stop();
         this.servers.forEach((item) => {
             item.server.close();
         });
