@@ -35,13 +35,11 @@ export class VisualAgentService {
             console.log('[VisualAgent] Port 8003 already in use; keeping existing service.');
             return;
         }
-        // During local development, reuse the existing Python installation and .env.
-        // Users can override the directory with ANDROID_AI_DIR.
-        const home = process.env.USERPROFILE || process.env.HOME || '';
-        const directory = process.env.ANDROID_AI_DIR || path.join(home, 'AndroidControlMaster');
+        // Bundled agent lives within the same Git repository, alongside dist.
+        const directory = process.env.ANDROID_AI_DIR || path.resolve(__dirname, '../android-agent');
         const script = path.join(directory, 'visual_agent.py');
         const python = process.env.ANDROID_AI_PYTHON ||
-            path.join(directory, process.platform === 'win32' ? 'venom/Scripts/python.exe' : 'venom/bin/python');
+            path.join(directory, process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python');
         if (!fs.existsSync(script) || !fs.existsSync(python)) {
             console.warn('[VisualAgent] Python agent not installed at ' + directory + '; AI chat will be unavailable.');
             return;
