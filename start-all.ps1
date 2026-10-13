@@ -13,6 +13,11 @@ if (-not (Test-Path (Join-Path $agentDir '.env'))) {
     "OPENAI_API_KEY=PASTE_NEW_KEY_HERE" | Set-Content -Encoding ascii (Join-Path $agentDir '.env')
     Write-Host 'Open android-agent\.env and replace the placeholder with your API key before sending tasks.'
 }
+if (-not (Test-Path 'node_modules')) {
+    Write-Host 'Installing dashboard dependencies...'
+    npm install
+    if ($LASTEXITCODE -ne 0) { throw 'Node dependency installation failed.' }
+}
 Write-Host 'Starting dashboard and bundled Android AI agent...'
 npm run start
 if ($LASTEXITCODE -ne 0) { throw 'Dashboard exited with error.' }
