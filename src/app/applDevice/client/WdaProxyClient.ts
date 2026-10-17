@@ -263,7 +263,7 @@ export class WdaProxyClient
             },
         };
         const response = await this.sendMessage(message);
-        this.hasSession = true;
+        this.hasSession = (response as MessageRunWdaResponse).data.status === 'started';
         return response as MessageRunWdaResponse;
     }
 
