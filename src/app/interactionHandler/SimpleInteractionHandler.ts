@@ -57,6 +57,10 @@ export class SimpleInteractionHandler extends InteractionHandler {
                     }
                 }
                 if (event.type === 'mouseup') {
+                    // A stationary click may not generate a mousemove; use mouseup as the end point.
+                    if (this.startPosition && !this.endPosition) {
+                        this.endPosition = events[0].position;
+                    }
                     if (this.startPosition && this.endPosition) {
                         this.clearCanvas();
                         if (this.startPosition.point.distance(this.endPosition.point) < 10) {
