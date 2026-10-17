@@ -7,6 +7,7 @@ import { ACTION } from '../../../common/Action';
 import Util from '../../Util';
 import { ChannelCode } from '../../../common/ChannelCode';
 import { WDAMethod } from '../../../common/WDAMethod';
+import { WdaStatus } from '../../../common/WdaStatus';
 import ScreenInfo from '../../ScreenInfo';
 import Position from '../../Position';
 import Point from '../../Point';
@@ -263,7 +264,7 @@ export class WdaProxyClient
             },
         };
         const response = await this.sendMessage(message);
-        this.hasSession = true;
+        this.hasSession = (response as MessageRunWdaResponse).data.status === WdaStatus.STARTED;
         return response as MessageRunWdaResponse;
     }
 

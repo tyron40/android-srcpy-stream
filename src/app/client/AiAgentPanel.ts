@@ -28,6 +28,15 @@ export class AiAgentPanel {
             <div id="ai-panel-content">
               <label for="ai-device">Target device</label><div class="ai-device-row"><select id="ai-device"></select><button id="ai-refresh" type="button">↻</button></div>
               <div id="ai-history" role="log" aria-live="polite"><p>Choose a device and tell the agent what to do. Commands run on your local Android controller.</p></div>
+              <section class="ai-autonomy">
+                <strong>Always-on mode</strong>
+                <label for="ai-goal">Standing instruction</label>
+                <textarea id="ai-goal" rows="3" placeholder="Monitor this app and continue reviewing articles as new content appears."></textarea>
+                <label for="ai-interval">Observe every (seconds)</label>
+                <input id="ai-interval" type="number" min="15" max="3600" value="45" />
+                <div class="ai-actions"><button type="button" id="ai-auto-start">Start continuous mode</button><button type="button" id="ai-auto-stop">Stop continuous mode</button></div>
+                <small id="ai-auto-status">Continuous mode inactive</small><div id="ai-auto-history" role="log" aria-label="Recent autonomous activity"></div>
+              </section>
               <form id="ai-form"><label for="ai-command">Command</label><textarea id="ai-command" rows="3" placeholder="Open Settings and find Wi-Fi"></textarea>
                 <div class="ai-actions"><button type="submit" id="ai-send">Run task</button><button type="button" id="ai-stop">Stop</button></div>
               </form><small id="ai-status">Agent must be running locally on port 8003.</small>
@@ -78,7 +87,60 @@ export class AiAgentPanel {
                 status.textContent = 'Task failed. Verify the local agent is running.';
             } finally { this.busy = false; send.disabled = false; }
         });
-        void this.devices(device);
+
+        const autoStatus = root.querySelector<HTMLElement>('#ai-auto-status')!;
+        const goal = root.querySelector<HTMLTextAreaElement>('#ai-goal')!;
+        const interval = root.querySelector<HTMLInputElement>('#ai-interval')!;
+        const autoRequest = async (endpoint: string, payload: object): Promise<any> => {
+            const response = await fetch('/ai-agent/autonomy/' + endpoint, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || data.detail || 'Autonomous request failed');
+            return data;
+        };
+        root.querySelector('#ai-auto-start')!.addEventListener('click', async () => {
+            if (!device.value || !goal.value.trim()) { autoStatus.textContent = 'Select a device and enter a standing instruction.'; return; }
+            try {
+                const result = await autoRequest('start', {
+                    serial: device.value, goal: goal.value.trim(),
+                    check_seconds: Math.max(15, Math.min(3600, Number(interval.value) || 45)),
+                    steps_per_cycle: 8,
+                });
+                autoStatus.textContent = result.status + ' — continues until stopped';
+                append('System', 'Continuous monitoring started on ' + device.value);
+            } catch (error) { autoStatus.textContent = String(error); }
+        });
+        root.querySelector('#ai-auto-stop')!.addEventListener('click', async () => {
+            try {
+                await autoRequest('stop', { serial: device.value });
+                autoStatus.textContent = 'Stop requested';
+            } catch (error) { autoStatus.textContent = String(error); }
+        });
+        const autoHistory = root.querySelector<HTMLElement>('#ai-auto-history')!;
+        const refreshAutonomy = async (): Promise<void> => {
+            if (!device.value) return;
+            try {
+                const response = await fetch('/ai-agent/autonomy/status?serial=' + encodeURIComponent(device.value));
+                if (!response.ok) return;
+                const data = await response.json();
+                autoStatus.textContent = 'Status: ' + data.status + (data.worker_alive ? ' (running)' : '');
+                if (data.goal && !goal.value) goal.value = data.goal;
+                const logResponse = await fetch('/ai-agent/autonomy/history?serial=' + encodeURIComponent(device.value));
+                if (logResponse.ok) {
+                    const log = await logResponse.json();
+                    autoHistory.replaceChildren();
+                    for (const item of (log.events || []).slice(0, 5)) {
+                        const line = document.createElement('p');
+                        line.textContent = item.at + ' — ' + item.kind + (item.kind === 'cycle' ? ': ' + (item.detail.status || '') : '');
+                        autoHistory.appendChild(line);
+                    }
+                }
+            } catch (_error) { /* Retry on next poll */ }
+        };
+        device.addEventListener('change', () => { goal.value = ''; void refreshAutonomy(); });
+        window.setInterval(() => void refreshAutonomy(), 10000);
+        void this.devices(device).then(() => refreshAutonomy());
         window.setInterval(() => { if (!this.busy) void this.devices(device); }, 10000);
     }
 }
