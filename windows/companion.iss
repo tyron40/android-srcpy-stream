@@ -17,6 +17,7 @@ WizardStyle=modern
 Source: "..\bundle\node.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\bundle\dist\*"; DestDir: "{app}\dist"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\bundle\Start-Device-Control.cmd"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\bundle\Launch-Device-Control.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\bundle\platform-tools\*"; DestDir: "{app}\platform-tools"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Icons]
 Name: "{autoprograms}\Device Control Center"; Filename: "{app}\Start-Device-Control.cmd"
