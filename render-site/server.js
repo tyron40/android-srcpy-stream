@@ -1,0 +1,4 @@
+const http = require("http");
+const port = Number(process.env.PORT || 10000);
+const page = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Device Control Center</title></head><body><main><h1>Device Control Center</h1><p>Windows companion installer: not yet available.</p><p>Remote device access: not yet enabled.</p><p><a href="https://github.com/tyron40/android-srcpy-stream/releases">Project releases</a></p></main></body></html>`;
+http.createServer((req,res)=>{if(req.url==="/healthz"){res.writeHead(200,{"Content-Type":"application/json"});return res.end(JSON.stringify({status:"ok"}));}if(req.url!=="/"){res.writeHead(404);return res.end("Not found");}res.writeHead(200,{"Content-Type":"text/html; charset=utf-8","X-Content-Type-Options":"nosniff"});res.end(page);}).listen(port,"0.0.0.0");
