@@ -2,17 +2,20 @@
 setlocal
 cd /d "%~dp0"
 if not exist "node.exe" (
-  echo Node runtime is missing. Please reinstall the Windows companion.
+  echo Node runtime missing. Reinstall the companion.
   pause
   exit /b 1
 )
 if not exist "dist\index.js" (
-  echo Application files are missing. Please reinstall.
+  echo Application entry point missing. Reinstall the companion.
   pause
   exit /b 1
 )
-echo Starting local Device Control Center...
-echo The device dashboard is local to this PC unless you configure secure remote access separately.
-cd dist
+echo Starting Device Control Center on this Windows computer...
+echo Keep this window open while using locally connected devices.
+cd /d "%~dp0dist"
 "..\node.exe" index.js
-if errorlevel 1 pause
+if errorlevel 1 (
+  echo Application exited with an error.
+  pause
+)
