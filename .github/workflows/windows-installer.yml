@@ -1,0 +1,47 @@
+name: Build Windows companion installer
+on:
+  workflow_dispatch:
+  push:
+    tags: ['companion-v*']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install and build
+        shell: pwsh
+        run: |
+          npm ci --no-audit --no-fund
+          npm run dist
+          if (!(Test-Path dist/index.js)) { throw 'Build did not produce dist/index.js' }
+      - name: Prepare portable bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force bundle | Out-Null
+          Copy-Item (Get-Command node).Source bundle/node.exe
+          Copy-Item windows/Start-Device-Control.cmd bundle/
+          Copy-Item dist bundle/dist -Recurse
+          Push-Location bundle/dist
+          npm install --omit=dev --no-audit --no-fund
+          Pop-Location
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+      - name: Compile installer
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $compiler)) { throw 'Inno Setup compiler not found' }
+          & $compiler windows/companion.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-device-control-installer
+          path: windows/output/*.exe
+          if-no-files-found: error
