@@ -2,6 +2,14 @@ name: Build Windows companion installer
 on:
   workflow_dispatch:
   push:
+    branches: ['main']
+    paths:
+      - 'src/**'
+      - 'webpack/**'
+      - 'windows/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/windows-installer.yml'
     tags: ['companion-v*']
 permissions:
   contents: read
@@ -28,9 +36,14 @@ jobs:
           Copy-Item (Get-Command node).Source bundle/node.exe
           Copy-Item windows/Start-Device-Control.cmd bundle/
           Copy-Item dist bundle/dist -Recurse
+          if (!(Test-Path bundle/dist/package.json)) { throw 'Generated dist/package.json is missing' }
           Push-Location bundle/dist
           npm install --omit=dev --no-audit --no-fund
           Pop-Location
+          $zip = Join-Path $env:RUNNER_TEMP 'platform-tools.zip'
+          Invoke-WebRequest 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip' -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath bundle -Force
+          if (!(Test-Path bundle/platform-tools/adb.exe)) { throw 'ADB executable missing' }
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --yes --no-progress
@@ -45,3 +58,4 @@ jobs:
           name: windows-device-control-installer
           path: windows/output/*.exe
           if-no-files-found: error
+          retention-days: 30
