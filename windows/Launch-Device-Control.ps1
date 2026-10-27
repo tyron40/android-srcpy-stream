@@ -15,7 +15,7 @@ try {
     if (-not $healthy) {
         $outLog = Join-Path (Split-Path $log) 'server-output.log'
         $errLog = Join-Path (Split-Path $log) 'server-errors.log'
-        $proc = Start-Process -FilePath $node -ArgumentList @($server) -WorkingDirectory (Join-Path $root 'dist') -PassThru -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden
+        $proc = Start-Process -FilePath $node -ArgumentList ('"' + $server + '"') -WorkingDirectory (Join-Path $root 'dist') -PassThru -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden
         for ($i=0; $i -lt 45; $i++) {
             Start-Sleep -Seconds 1
             if ($proc.HasExited) { throw "Server stopped with exit code $($proc.ExitCode). Read $errLog" }
