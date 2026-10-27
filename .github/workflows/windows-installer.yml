@@ -12,7 +12,7 @@ on:
       - '.github/workflows/windows-installer.yml'
     tags: ['companion-v*']
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -60,3 +60,16 @@ jobs:
           path: windows/output/*.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish directly downloadable installer
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = 'windows-companion'
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title 'Device Control Center for Windows' --notes 'Windows installer. Automatically updated after successful builds.' --target $env:GITHUB_SHA
+          }
+          gh release upload $tag 'windows/output/Device-Control-Center-Setup.exe' --clobber
