@@ -35,6 +35,7 @@ jobs:
           New-Item -ItemType Directory -Force bundle | Out-Null
           Copy-Item (Get-Command node).Source bundle/node.exe
           Copy-Item windows/Start-Device-Control.cmd bundle/
+          Copy-Item windows/Launch-Device-Control.ps1 bundle/
           Copy-Item dist bundle/dist -Recurse
           if (!(Test-Path bundle/dist/package.json)) { throw 'Generated dist/package.json is missing' }
           Push-Location bundle/dist
