@@ -21,6 +21,7 @@ export class MirrorActionService {
         const { masterSerial, targetSerials, action } = request;
         const dedupedTargets = Array.from(new Set(targetSerials.filter((s) => s && s !== masterSerial)));
 
+        if (dedupedTargets.length > 32) throw new Error('Maximum 32 follower devices');
         const masterSize = await this.getScreenSize(masterSerial);
         const results: MirrorTargetResult[] = [];
 
@@ -62,10 +63,10 @@ export class MirrorActionService {
         if (!request || typeof request !== 'object') {
             throw new Error('Invalid body');
         }
-        if (!request.masterSerial || typeof request.masterSerial !== 'string') {
+        if (!request.masterSerial || typeof request.masterSerial !== 'string' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(request.masterSerial)) {
             throw new Error('masterSerial is required');
         }
-        if (!Array.isArray(request.targetSerials) || request.targetSerials.length === 0) {
+        if (!Array.isArray(request.targetSerials) || request.targetSerials.length === 0 || request.targetSerials.some((s) => typeof s !== 'string' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(s))) {
             throw new Error('targetSerials must be a non-empty array');
         }
         if (!request.action || typeof request.action !== 'object' || typeof request.action.type !== 'string') {
@@ -74,7 +75,7 @@ export class MirrorActionService {
 
         const { action } = request;
         if (action.type === 'tap') {
-            if (!this.isFiniteNumber(action.x) || !this.isFiniteNumber(action.y)) {
+            if (!this.isFiniteNumber(action.x) || !this.isFiniteNumber(action.y) || action.x < 0 || action.y < 0) {
                 throw new Error('tap action requires numeric x,y');
             }
             return;
@@ -85,25 +86,26 @@ export class MirrorActionService {
                 !this.isFiniteNumber(action.x1) ||
                 !this.isFiniteNumber(action.y1) ||
                 !this.isFiniteNumber(action.x2) ||
-                !this.isFiniteNumber(action.y2)
+                !this.isFiniteNumber(action.y2) ||
+                [action.x1, action.y1, action.x2, action.y2].some((n) => n < 0)
             ) {
                 throw new Error('swipe action requires numeric x1,y1,x2,y2');
             }
-            if (typeof action.duration !== 'undefined' && !this.isFiniteNumber(action.duration)) {
+            if (typeof action.duration !== 'undefined' && (!this.isFiniteNumber(action.duration) || action.duration < 100 || action.duration > 2000)) {
                 throw new Error('swipe duration must be numeric');
             }
             return;
         }
 
         if (action.type === 'key') {
-            if (!this.isFiniteNumber(action.keyCode)) {
+            if (!this.isFiniteNumber(action.keyCode) || !Number.isInteger(action.keyCode) || action.keyCode < 0 || action.keyCode > 1000) {
                 throw new Error('key action requires numeric keyCode');
             }
             return;
         }
 
         if (action.type === 'text') {
-            if (typeof action.text !== 'string') {
+            if (typeof action.text !== 'string' || action.text.length > 1000) {
                 throw new Error('text action requires text');
             }
             return;
@@ -217,7 +219,8 @@ export class MirrorActionService {
 
     private static runAdb(args: string[]): Promise<string> {
         return new Promise((resolve, reject) => {
-            const child = spawn('adb', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+            const child = spawn('adb', args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+            const timer = setTimeout(() => child.kill(), 10000);
             let stdout = '';
             let stderr = '';
 
@@ -230,10 +233,12 @@ export class MirrorActionService {
             });
 
             child.on('error', (error) => {
+                clearTimeout(timer);
                 reject(error);
             });
 
             child.on('close', (code) => {
+                clearTimeout(timer);
                 if (code === 0) {
                     resolve(stdout.trim());
                     return;
