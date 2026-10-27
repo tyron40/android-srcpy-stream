@@ -80,6 +80,19 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
     public async start(): Promise<void> {
         this.mainApp = express();
         this.mainApp.use(express.json({ limit: '1mb' }));
+        // Allow the public dashboard to communicate with the companion on the user's own PC.
+        this.mainApp.use((req, res, next) => {
+            const origin = req.headers.origin;
+            if (origin === 'https://android-srcpy-control-center.onrender.com') {
+                res.setHeader('Access-Control-Allow-Origin', origin);
+                res.setHeader('Vary', 'Origin');
+                res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+                res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+                res.setHeader('Access-Control-Allow-Private-Network', 'true');
+            }
+            if (req.method === 'OPTIONS') { res.sendStatus(204); return; }
+            next();
+        });
 
         this.mainApp.post('/mirror-action', async (req, res) => {
             try {
