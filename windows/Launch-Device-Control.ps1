@@ -5,7 +5,7 @@ $node = Join-Path $root 'node.exe'
 $log = Join-Path $env:LOCALAPPDATA 'DeviceControlCenter\startup.log'
 New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null
 $env:PATH = (Join-Path $root 'platform-tools') + ';' + $env:PATH
-$url = 'http://127.0.0.1:8000/'
+$url = 'http://127.0.0.1:8000/legacy'
 try {
     $healthy = $false
     try {
