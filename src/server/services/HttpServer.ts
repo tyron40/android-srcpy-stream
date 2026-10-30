@@ -7,6 +7,13 @@ import express, { Express } from 'express';
 import { Config } from '../Config';
 import { TypedEmitter } from '../../common/TypedEmitter';
 import * as process from 'process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import * as fs from 'fs';
+import * as os from 'os';
+const execAdb = promisify(execFile);
+const legacySerial = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(value);
+const localOnly = (address?: string): boolean => address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 import { EnvName } from '../EnvName';
 import { MirrorActionService } from '../goog-device/services/MirrorActionService';
 import { MirrorActionRequest } from '../../types/MirrorAction';
@@ -94,6 +101,45 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
             next();
         });
 
+        // Android 4.x compatibility mode: ADB screenshots and input, no modern scrcpy server.
+        this.mainApp.get('/legacy', (_req, res) => {
+            res.type('html').send(legacyHtml);
+        });
+        this.mainApp.get('/legacy/screen/:serial', async (req, res) => {
+            if (!localOnly(req.socket.remoteAddress)) return res.sendStatus(403);
+            const serial = req.params.serial;
+            if (!legacySerial(serial)) return res.sendStatus(400);
+            const temp = path.join(os.tmpdir(), 'dcc-' + process.pid + '-' + Date.now() + '.png');
+            try {
+                // Use file transfer fallback for old Android versions that do not support exec-out.
+                await execAdb('adb', ['-s', serial, 'shell', 'screencap', '-p', '/sdcard/dcc-screen.png'], { timeout: 12000, windowsHide: true });
+                await execAdb('adb', ['-s', serial, 'pull', '/sdcard/dcc-screen.png', temp], { timeout: 12000, windowsHide: true });
+                const data = fs.readFileSync(temp);
+                if (data.length < 24 || data.subarray(1, 4).toString() !== 'PNG') throw Error('Invalid PNG screenshot');
+                res.setHeader('Cache-Control', 'no-store');
+                res.type('png').send(data);
+            } catch (error: unknown) {
+                res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+            } finally { try { fs.unlinkSync(temp); } catch (_) { /* cleanup */ } }
+        });
+        this.mainApp.post('/legacy/input/:serial', async (req, res) => {
+            if (!localOnly(req.socket.remoteAddress)) return res.sendStatus(403);
+            const serial = req.params.serial;
+            if (!legacySerial(serial)) return res.sendStatus(400);
+            const body = req.body || {};
+            let args: string[];
+            if (body.type === 'key' && [3, 4, 26, 82, 187].includes(body.keyCode)) {
+                args = ['-s', serial, 'shell', 'input', 'keyevent', String(body.keyCode)];
+            } else if (body.type === 'tap' && Number.isInteger(body.x) && Number.isInteger(body.y) && body.x >= 0 && body.y >= 0 && body.x <= 5000 && body.y <= 5000) {
+                args = ['-s', serial, 'shell', 'input', 'tap', String(body.x), String(body.y)];
+            } else { return res.status(400).json({ error: 'Unsupported input' }); }
+            try {
+                await execAdb('adb', args, { timeout: 8000, windowsHide: true });
+                res.json({ ok: true });
+            } catch (error: unknown) {
+                res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+            }
+        });
         this.mainApp.post('/mirror-action', async (req, res) => {
             try {
                 const payload = req.body as MirrorActionRequest;
@@ -191,3 +237,13 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
         });
     }
 }
+
+const legacyHtml = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Legacy Android Control</title><style>body{background:#0b1220;color:#eaf2ff;font:16px system-ui;margin:0;padding:24px}button,select{background:#2877ed;color:white;border:0;padding:12px;margin:5px;border-radius:10px;cursor:pointer}main{max-width:980px;margin:auto}#screen{display:block;max-height:75vh;max-width:100%;margin:20px auto;border:2px solid #384967;cursor:crosshair}#status{color:#abc1dc}</style></head><body><main><h1>Legacy Android Control</h1><p>Android 4.x compatibility • screenshot refresh and ADB input</p><select id="device"></select><button onclick="refresh()">Refresh devices</button><button onclick="sendKey(3)">Home</button><button onclick="sendKey(4)">Back</button><button onclick="sendKey(26)">Power</button><button onclick="sendKey(82)">Menu</button><p id="status">Connecting…</p><img id="screen" alt="Device screenshot; click to tap phone" /></main><script>
+const device=document.getElementById('device'),screen=document.getElementById('screen'),status=document.getElementById('status');let busy=false;
+async function refresh(){try{const r=await fetch('/devices');const j=await r.json();device.replaceChildren();for(const id of j.devices||[]){const o=document.createElement('option');o.value=id;o.textContent=id;device.append(o);}status.textContent=device.value?'Connected: '+device.value:'No authorized Android devices';}catch(e){status.textContent='Device detection failed: '+e.message;}}
+async function send(body){if(!device.value)return;try{const r=await fetch('/legacy/input/'+encodeURIComponent(device.value),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error(await r.text());status.textContent='Command sent: '+body.type;}catch(e){status.textContent='Input failed: '+e.message;}}
+function sendKey(keyCode){send({type:'key',keyCode});}
+screen.addEventListener('click',e=>{if(!screen.naturalWidth)return;const rect=screen.getBoundingClientRect();send({type:'tap',x:Math.round((e.clientX-rect.left)/rect.width*screen.naturalWidth),y:Math.round((e.clientY-rect.top)/rect.height*screen.naturalHeight)});});
+async function frame(){if(busy||!device.value)return;busy=true;try{const r=await fetch('/legacy/screen/'+encodeURIComponent(device.value)+'?t='+Date.now());if(!r.ok)throw Error(await r.text());const blob=await r.blob();const u=URL.createObjectURL(blob);const old=screen.src;screen.onload=()=>{if(old.startsWith('blob:'))URL.revokeObjectURL(old);};screen.src=u;status.textContent='Screen updated: '+new Date().toLocaleTimeString();}catch(e){status.textContent='Screen capture failed: '+e.message;}finally{busy=false;}}
+device.onchange=()=>{screen.removeAttribute('src');frame();};refresh().then(frame);setInterval(frame,1800);
+</script></body></html>`;
