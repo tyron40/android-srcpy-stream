@@ -111,9 +111,9 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
             res.type('html').send(legacyHtml.replace('const device=document.getElementById', 'const preferredSerial=' + JSON.stringify(req.params.serial) + ';const device=document.getElementById'));
         });
         this.mainApp.get('/legacy/screen/:serial', async (req, res) => {
-            if (!localOnly(req.socket.remoteAddress)) return res.sendStatus(403);
+            if (!localOnly(req.socket.remoteAddress)) { res.sendStatus(403); return; }
             const serial = req.params.serial;
-            if (!legacySerial(serial)) return res.sendStatus(400);
+            if (!legacySerial(serial)) { res.sendStatus(400); return; }
             const temp = path.join(os.tmpdir(), 'dcc-' + process.pid + '-' + Date.now() + '.png');
             try {
                 // Use file transfer fallback for old Android versions that do not support exec-out.
@@ -142,7 +142,7 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
                 args = ['-s', serial, 'shell', 'input', 'keyevent', String(body.keyCode)];
             } else if (body.type === 'tap' && Number.isInteger(body.x) && Number.isInteger(body.y) && body.x >= 0 && body.y >= 0 && body.x <= 5000 && body.y <= 5000) {
                 args = ['-s', serial, 'shell', 'input', 'tap', String(body.x), String(body.y)];
-            } else { return res.status(400).json({ error: 'Unsupported input' }); }
+            } else { res.status(400).json({ error: 'Unsupported input' }); return; }
             try {
                 await execAdb('adb', args, { timeout: 8000, windowsHide: true });
                 res.json({ ok: true });
