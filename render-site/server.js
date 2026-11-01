@@ -14,7 +14,7 @@ if(!response.ok)throw new Error('Companion returned HTTP '+response.status);
 const data=await response.json();const devices=Array.isArray(data.devices)?data.devices:[];
 status.textContent=devices.length?devices.length+' Android device(s) detected':'Companion connected. No authorized Android devices detected.';
 list.replaceChildren();
-for(const udid of devices){const button=document.createElement('button');button.type='button';button.className='button';button.style.cssText='border:0;cursor:pointer;margin-right:10px';button.textContent='Open '+udid;button.onclick=()=>{view.replaceChildren();const note=document.createElement('p');note.textContent='Local control window for '+udid+' (select the device inside the companion).';const link=document.createElement('a');link.className='button';link.href=base+'/';link.target='_blank';link.rel='noopener';link.textContent='Launch device controls';view.append(note,link);};list.append(button);}
+for(const udid of devices){const button=document.createElement('button');button.type='button';button.className='button';button.style.cssText='border:0;cursor:pointer;margin-right:10px';button.textContent='View Screen • '+udid;button.onclick=()=>{window.open(base+'/legacy/view/'+encodeURIComponent(udid),'_blank','noopener');};list.append(button);}
 }catch(err){status.textContent='Windows companion is offline or browser access to localhost is blocked. Install and start the companion, then refresh.';list.replaceChildren();}
 }
 document.getElementById('refresh-devices').addEventListener('click',refresh);refresh();
