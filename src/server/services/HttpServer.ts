@@ -117,8 +117,13 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
             const temp = path.join(os.tmpdir(), 'dcc-' + process.pid + '-' + Date.now() + '.png');
             try {
                 // Use file transfer fallback for old Android versions that do not support exec-out.
-                await execAdb('adb', ['-s', serial, 'shell', 'screencap', '-p', '/sdcard/dcc-screen.png'], { timeout: 12000, windowsHide: true });
-                await execAdb('adb', ['-s', serial, 'pull', '/sdcard/dcc-screen.png', temp], { timeout: 12000, windowsHide: true });
+                const remote = '/sdcard/dcc-' + process.pid + '.png';
+                try {
+                    await execAdb('adb', ['-s', serial, 'shell', 'screencap', '-p', remote], { timeout: 12000, windowsHide: true });
+                    await execAdb('adb', ['-s', serial, 'pull', remote, temp], { timeout: 12000, windowsHide: true });
+                } finally {
+                    execAdb('adb', ['-s', serial, 'shell', 'rm', '-f', remote], { timeout: 4000, windowsHide: true }).catch(() => undefined);
+                }
                 const data = fs.readFileSync(temp);
                 if (data.length < 24 || data.subarray(1, 4).toString() !== 'PNG') throw Error('Invalid PNG screenshot');
                 res.setHeader('Cache-Control', 'no-store');
@@ -249,6 +254,6 @@ async function refresh(){try{const r=await fetch('/devices');const j=await r.jso
 async function send(body){if(!device.value)return;try{const r=await fetch('/legacy/input/'+encodeURIComponent(device.value),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error(await r.text());status.textContent='Command sent: '+body.type;}catch(e){status.textContent='Input failed: '+e.message;}}
 function sendKey(keyCode){send({type:'key',keyCode});}
 screen.addEventListener('click',e=>{if(!screen.naturalWidth)return;const rect=screen.getBoundingClientRect();send({type:'tap',x:Math.round((e.clientX-rect.left)/rect.width*screen.naturalWidth),y:Math.round((e.clientY-rect.top)/rect.height*screen.naturalHeight)});});
-async function frame(){if(busy||!device.value)return;busy=true;try{const r=await fetch('/legacy/screen/'+encodeURIComponent(device.value)+'?t='+Date.now());if(!r.ok)throw Error(await r.text());const blob=await r.blob();const u=URL.createObjectURL(blob);const old=screen.src;screen.onload=()=>{if(old.startsWith('blob:'))URL.revokeObjectURL(old);};screen.src=u;status.textContent='Screen updated: '+new Date().toLocaleTimeString();}catch(e){status.textContent='Screen capture failed: '+e.message;}finally{busy=false;}}
+async function frame(){if(busy||!device.value)return;busy=true;try{const r=await fetch('/legacy/screen/'+encodeURIComponent(device.value)+'?t='+Date.now());if(!r.ok)throw Error(await r.text());const blob=await r.blob();const u=URL.createObjectURL(blob);const old=screen.src;await new Promise((resolve,reject)=>{screen.onload=resolve;screen.onerror=()=>reject(Error('Invalid screenshot image'));screen.src=u;});if(old.startsWith('blob:'))URL.revokeObjectURL(old);status.textContent='Screen updated: '+new Date().toLocaleTimeString();}catch(e){status.textContent='Screen capture failed: '+e.message;}finally{busy=false;}}
 device.onchange=()=>{screen.removeAttribute('src');frame();};refresh().then(frame);setInterval(frame,1800);
 </script></body></html>`;
