@@ -105,6 +105,11 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
         this.mainApp.get('/legacy', (_req, res) => {
             res.type('html').send(legacyHtml);
         });
+        this.mainApp.get('/legacy/view/:serial', (req, res) => {
+            if (!localOnly(req.socket.remoteAddress)) return res.sendStatus(403);
+            if (!legacySerial(req.params.serial)) return res.sendStatus(400);
+            res.type('html').send(legacyHtml.replace('const device=document.getElementById', 'const preferredSerial=' + JSON.stringify(req.params.serial) + ';const device=document.getElementById'));
+        });
         this.mainApp.get('/legacy/screen/:serial', async (req, res) => {
             if (!localOnly(req.socket.remoteAddress)) return res.sendStatus(403);
             const serial = req.params.serial;
@@ -240,7 +245,7 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
 
 const legacyHtml = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Legacy Android Control</title><style>body{background:#0b1220;color:#eaf2ff;font:16px system-ui;margin:0;padding:24px}button,select{background:#2877ed;color:white;border:0;padding:12px;margin:5px;border-radius:10px;cursor:pointer}main{max-width:980px;margin:auto}#screen{display:block;max-height:75vh;max-width:100%;margin:20px auto;border:2px solid #384967;cursor:crosshair}#status{color:#abc1dc}</style></head><body><main><h1>Legacy Android Control</h1><p>Android 4.x compatibility • screenshot refresh and ADB input</p><select id="device"></select><button onclick="refresh()">Refresh devices</button><button onclick="sendKey(3)">Home</button><button onclick="sendKey(4)">Back</button><button onclick="sendKey(26)">Power</button><button onclick="sendKey(82)">Menu</button><p id="status">Connecting…</p><img id="screen" alt="Device screenshot; click to tap phone" /></main><script>
 const device=document.getElementById('device'),screen=document.getElementById('screen'),status=document.getElementById('status');let busy=false;
-async function refresh(){try{const r=await fetch('/devices');const j=await r.json();device.replaceChildren();for(const id of j.devices||[]){const o=document.createElement('option');o.value=id;o.textContent=id;device.append(o);}status.textContent=device.value?'Connected: '+device.value:'No authorized Android devices';}catch(e){status.textContent='Device detection failed: '+e.message;}}
+async function refresh(){try{const r=await fetch('/devices');const j=await r.json();device.replaceChildren();for(const id of j.devices||[]){const o=document.createElement('option');o.value=id;o.textContent=id;device.append(o);}if(typeof preferredSerial!=='undefined'&&Array.from(device.options).some(o=>o.value===preferredSerial))device.value=preferredSerial;status.textContent=device.value?'Connected: '+device.value:'No authorized Android devices';}catch(e){status.textContent='Device detection failed: '+e.message;}}
 async function send(body){if(!device.value)return;try{const r=await fetch('/legacy/input/'+encodeURIComponent(device.value),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error(await r.text());status.textContent='Command sent: '+body.type;}catch(e){status.textContent='Input failed: '+e.message;}}
 function sendKey(keyCode){send({type:'key',keyCode});}
 screen.addEventListener('click',e=>{if(!screen.naturalWidth)return;const rect=screen.getBoundingClientRect();send({type:'tap',x:Math.round((e.clientX-rect.left)/rect.width*screen.naturalWidth),y:Math.round((e.clientY-rect.top)/rect.height*screen.naturalHeight)});});
