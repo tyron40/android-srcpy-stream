@@ -101,23 +101,29 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
             next();
         });
 
+        // Put a visible compatibility viewer link on the classic ws-scrcpy interface.
+        this.mainApp.get('/legacy/link/:serial', (req, res) => {
+            if (!localOnly(req.socket.remoteAddress)) { res.sendStatus(403); return; }
+            if (!legacySerial(req.params.serial)) { res.sendStatus(400); return; }
+            res.redirect('/legacy/view/' + encodeURIComponent(req.params.serial));
+        });
         // Android 4.x compatibility mode: ADB screenshots and input, no modern scrcpy server.
         this.mainApp.get('/legacy', (_req, res) => {
             res.type('html').send(legacyHtml);
         });
         this.mainApp.get('/legacy/view/:serial', (req, res) => {
-            if (!localOnly(req.socket.remoteAddress)) return res.sendStatus(403);
-            if (!legacySerial(req.params.serial)) return res.sendStatus(400);
+            if (!localOnly(req.socket.remoteAddress)) { res.sendStatus(403); return; }
+            if (!legacySerial(req.params.serial)) { res.sendStatus(400); return; }
             res.type('html').send(legacyHtml.replace('const device=document.getElementById', 'const preferredSerial=' + JSON.stringify(req.params.serial) + ';const device=document.getElementById'));
         });
         this.mainApp.get('/legacy/screen/:serial', async (req, res) => {
             if (!localOnly(req.socket.remoteAddress)) { res.sendStatus(403); return; }
             const serial = req.params.serial;
             if (!legacySerial(serial)) { res.sendStatus(400); return; }
-            const temp = path.join(os.tmpdir(), 'dcc-' + process.pid + '-' + Date.now() + '.png');
+            const temp = path.join(os.tmpdir(), 'dcc-' + process.pid + '-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.png');
             try {
                 // Use file transfer fallback for old Android versions that do not support exec-out.
-                const remote = '/sdcard/dcc-' + process.pid + '.png';
+                const remote = '/sdcard/dcc-' + process.pid + '-' + Math.random().toString(36).slice(2) + '.png';
                 try {
                     await execAdb('adb', ['-s', serial, 'shell', 'screencap', '-p', remote], { timeout: 12000, windowsHide: true });
                     await execAdb('adb', ['-s', serial, 'pull', remote, temp], { timeout: 12000, windowsHide: true });
