@@ -139,9 +139,9 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
             } finally { try { fs.unlinkSync(temp); } catch (_) { /* cleanup */ } }
         });
         this.mainApp.post('/legacy/input/:serial', async (req, res) => {
-            if (!localOnly(req.socket.remoteAddress)) return res.sendStatus(403);
+            if (!localOnly(req.socket.remoteAddress)) { res.sendStatus(403); return; }
             const serial = req.params.serial;
-            if (!legacySerial(serial)) return res.sendStatus(400);
+            if (!legacySerial(serial)) { res.sendStatus(400); return; }
             const body = req.body || {};
             let args: string[];
             if (body.type === 'key' && [3, 4, 26, 82, 187].includes(body.keyCode)) {
