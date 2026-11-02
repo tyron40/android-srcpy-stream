@@ -7,11 +7,25 @@ import express, { Express } from 'express';
 import { Config } from '../Config';
 import { TypedEmitter } from '../../common/TypedEmitter';
 import * as process from 'process';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'os';
 const execAdb = promisify(execFile);
+const fastCapture = (serial: string): Promise<Buffer> => new Promise((resolve, reject) => {
+    const child = spawn('adb', ['-s', serial, 'exec-out', 'screencap', '-p'], { windowsHide: true });
+    const chunks: Buffer[] = []; let size = 0; let err = '';
+    const timer = setTimeout(() => child.kill(), 6000);
+    child.stdout.on('data', (chunk: Buffer) => { size += chunk.length; if (size > 12 * 1024 * 1024) child.kill(); else chunks.push(chunk); });
+    child.stderr.on('data', (chunk: Buffer) => { err += chunk.toString().slice(0, 300); });
+    child.on('error', e => { clearTimeout(timer); reject(e); });
+    child.on('close', code => {
+        clearTimeout(timer);
+        const data = Buffer.concat(chunks);
+        if (code === 0 && data.length > 24 && data.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) resolve(data);
+        else reject(new Error('Direct screenshot unsupported: ' + err));
+    });
+});
 const legacySerial = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(value);
 const localOnly = (address?: string): boolean => address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 import { EnvName } from '../EnvName';
@@ -122,15 +136,20 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
             if (!legacySerial(serial)) { res.sendStatus(400); return; }
             const temp = path.join(os.tmpdir(), 'dcc-' + process.pid + '-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.png');
             try {
-                // Use file transfer fallback for old Android versions that do not support exec-out.
-                const remote = '/sdcard/dcc-' + process.pid + '-' + Math.random().toString(36).slice(2) + '.png';
+                // Prefer one ADB round trip; Android 4 devices that lack exec-out use the reliable pull fallback.
+                let data: Buffer;
                 try {
-                    await execAdb('adb', ['-s', serial, 'shell', 'screencap', '-p', remote], { timeout: 12000, windowsHide: true });
-                    await execAdb('adb', ['-s', serial, 'pull', remote, temp], { timeout: 12000, windowsHide: true });
-                } finally {
-                    execAdb('adb', ['-s', serial, 'shell', 'rm', '-f', remote], { timeout: 4000, windowsHide: true }).catch(() => undefined);
+                    data = await fastCapture(serial);
+                } catch (_) {
+                    const remote = '/sdcard/dcc-' + process.pid + '-' + Math.random().toString(36).slice(2) + '.png';
+                    try {
+                        await execAdb('adb', ['-s', serial, 'shell', 'screencap', '-p', remote], { timeout: 12000, windowsHide: true });
+                        await execAdb('adb', ['-s', serial, 'pull', remote, temp], { timeout: 12000, windowsHide: true });
+                    } finally {
+                        execAdb('adb', ['-s', serial, 'shell', 'rm', '-f', remote], { timeout: 4000, windowsHide: true }).catch(() => undefined);
+                    }
+                    data = fs.readFileSync(temp);
                 }
-                const data = fs.readFileSync(temp);
                 if (data.length < 24 || data.subarray(1, 4).toString() !== 'PNG') throw Error('Invalid PNG screenshot');
                 res.setHeader('Cache-Control', 'no-store');
                 res.type('png').send(data);
