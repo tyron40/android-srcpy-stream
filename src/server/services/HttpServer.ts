@@ -148,6 +148,8 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
                 args = ['-s', serial, 'shell', 'input', 'keyevent', String(body.keyCode)];
             } else if (body.type === 'tap' && Number.isInteger(body.x) && Number.isInteger(body.y) && body.x >= 0 && body.y >= 0 && body.x <= 5000 && body.y <= 5000) {
                 args = ['-s', serial, 'shell', 'input', 'tap', String(body.x), String(body.y)];
+            } else if (body.type === 'swipe' && [body.x1, body.y1, body.x2, body.y2].every((n: unknown) => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= 5000) && Number.isInteger(body.duration) && body.duration >= 80 && body.duration <= 5000) {
+                args = ['-s', serial, 'shell', 'input', 'swipe', String(body.x1), String(body.y1), String(body.x2), String(body.y2), String(body.duration)];
             } else { res.status(400).json({ error: 'Unsupported input' }); return; }
             try {
                 await execAdb('adb', args, { timeout: 8000, windowsHide: true });
@@ -259,7 +261,14 @@ const device=document.getElementById('device'),screen=document.getElementById('s
 async function refresh(){try{const r=await fetch('/devices');const j=await r.json();device.replaceChildren();for(const id of j.devices||[]){const o=document.createElement('option');o.value=id;o.textContent=id;device.append(o);}if(typeof preferredSerial!=='undefined'&&Array.from(device.options).some(o=>o.value===preferredSerial))device.value=preferredSerial;status.textContent=device.value?'Connected: '+device.value:'No authorized Android devices';}catch(e){status.textContent='Device detection failed: '+e.message;}}
 async function send(body){if(!device.value)return;try{const r=await fetch('/legacy/input/'+encodeURIComponent(device.value),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error(await r.text());status.textContent='Command sent: '+body.type;}catch(e){status.textContent='Input failed: '+e.message;}}
 function sendKey(keyCode){send({type:'key',keyCode});}
-screen.addEventListener('click',e=>{if(!screen.naturalWidth)return;const rect=screen.getBoundingClientRect();send({type:'tap',x:Math.round((e.clientX-rect.left)/rect.width*screen.naturalWidth),y:Math.round((e.clientY-rect.top)/rect.height*screen.naturalHeight)});});
+// Pointer Events support mouse and touch. Short gestures tap; longer gestures swipe.
+screen.style.touchAction='none';
+let pointerStart=null;
+function position(e){const rect=screen.getBoundingClientRect();return {x:Math.max(0,Math.min(5000,Math.round((e.clientX-rect.left)/rect.width*screen.naturalWidth))),y:Math.max(0,Math.min(5000,Math.round((e.clientY-rect.top)/rect.height*screen.naturalHeight)))};}
+screen.addEventListener('pointerdown',e=>{if(!screen.naturalWidth||pointerStart)return;pointerStart={id:e.pointerId,pos:position(e),time:performance.now()};screen.setPointerCapture(e.pointerId);e.preventDefault();});
+screen.addEventListener('pointerup',e=>{if(!pointerStart||pointerStart.id!==e.pointerId)return;const start=pointerStart;pointerStart=null;const end=position(e),elapsed=performance.now()-start.time,dist=Math.hypot(end.x-start.pos.x,end.y-start.pos.y);if(dist<20&&elapsed<650){send({type:'tap',x:end.x,y:end.y});}else{send({type:'swipe',x1:start.pos.x,y1:start.pos.y,x2:end.x,y2:end.y,duration:Math.max(80,Math.min(5000,Math.round(elapsed)))});}e.preventDefault();});
+screen.addEventListener('pointercancel',()=>{pointerStart=null;});
+screen.addEventListener('dragstart',e=>e.preventDefault());
 async function frame(){if(busy||!device.value)return;busy=true;try{const r=await fetch('/legacy/screen/'+encodeURIComponent(device.value)+'?t='+Date.now());if(!r.ok)throw Error(await r.text());const blob=await r.blob();const u=URL.createObjectURL(blob);const old=screen.src;await new Promise((resolve,reject)=>{screen.onload=resolve;screen.onerror=()=>reject(Error('Invalid screenshot image'));screen.src=u;});if(old.startsWith('blob:'))URL.revokeObjectURL(old);status.textContent='Screen updated: '+new Date().toLocaleTimeString();}catch(e){status.textContent='Screen capture failed: '+e.message;}finally{busy=false;}}
 device.onchange=()=>{screen.removeAttribute('src');frame();};refresh().then(frame);setInterval(frame,1800);
 </script></body></html>`;
