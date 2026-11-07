@@ -423,50 +423,105 @@ export class StreamClientScrcpy
 
         const help = document.createElement('div');
         help.className = 'sync-help';
-        help.innerText = 'Devices receiving mirrored actions';
+        help.innerText = 'Choose every device that should receive this master\'s actions:';
         holder.appendChild(help);
 
-        const select = document.createElement('select');
-        select.multiple = true;
-        select.size = 6;
+        const toolbar = document.createElement('div');
+        toolbar.className = 'sync-target-toolbar';
+        const selectAll = document.createElement('button');
+        selectAll.type = 'button';
+        selectAll.textContent = 'Select all';
+        const clearAll = document.createElement('button');
+        clearAll.type = 'button';
+        clearAll.textContent = 'Deselect all';
+        const refresh = document.createElement('button');
+        refresh.type = 'button';
+        refresh.textContent = 'Refresh devices';
+        toolbar.appendChild(selectAll);
+        toolbar.appendChild(clearAll);
+        toolbar.appendChild(refresh);
+        holder.appendChild(toolbar);
 
-        const refreshTargets = (): void => {
-            const selected = new Set(Array.from(select.selectedOptions).map((opt) => opt.value));
-            select.innerHTML = '';
-            const streams = DeviceTracker.getKnownDeviceStreams();
-            streams.forEach((item) => {
-                if (item.udid === udid) {
-                    return;
-                }
-                const option = document.createElement('option');
-                option.value = item.udid;
-                option.text = item.udid;
-                option.selected = selected.has(item.udid);
-                select.appendChild(option);
-            });
-        };
+        const list = document.createElement('div');
+        list.className = 'sync-target-list';
+        list.setAttribute('role', 'group');
+        list.setAttribute('aria-label', 'Devices receiving mirrored actions');
+        list.style.maxHeight = '210px';
+        list.style.overflowY = 'auto';
+        list.style.padding = '8px';
+        list.style.border = '1px solid #888';
+        list.style.borderRadius = '6px';
+        holder.appendChild(list);
 
+        const count = document.createElement('div');
+        count.className = 'sync-target-count';
+        holder.appendChild(count);
+
+        // Checkboxes support ordinary clicks/taps; no Ctrl or Shift key required.
+        const selected = new Set<string>();
         const applyTargets = (): void => {
-            const targets = Array.from(select.selectedOptions).map((opt) => ({ udid: opt.value }));
             this.syncManager.setMasterUdid(udid);
-            this.syncManager.setTargets(targets);
+            this.syncManager.setTargets(Array.from(selected).map((id) => ({ udid: id })));
+            count.textContent = selected.size + ' target device(s) selected';
         };
 
+        const renderTargets = (): void => {
+            list.innerHTML = '';
+            const streams = DeviceTracker.getKnownDeviceStreams().filter((item) => item.udid !== udid);
+            const available = new Set(streams.map((item) => item.udid));
+            Array.from(selected).forEach((id) => {
+                if (!available.has(id)) selected.delete(id);
+            });
+            streams.forEach((item) => {
+                const label = document.createElement('label');
+                label.style.display = 'flex';
+                label.style.alignItems = 'center';
+                label.style.gap = '8px';
+                label.style.padding = '5px 0';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = item.udid;
+                checkbox.checked = selected.has(item.udid);
+                checkbox.disabled = !enabled.checked;
+                checkbox.onchange = () => {
+                    if (checkbox.checked) selected.add(item.udid);
+                    else selected.delete(item.udid);
+                    applyTargets();
+                };
+                const name = document.createElement('span');
+                name.textContent = item.udid;
+                label.appendChild(checkbox);
+                label.appendChild(name);
+                list.appendChild(label);
+            });
+            if (!streams.length) {
+                list.textContent = 'No other connected device streams found.';
+            }
+            applyTargets();
+        };
+
+        const setSelection = (all: boolean): void => {
+            if (all) {
+                DeviceTracker.getKnownDeviceStreams().forEach((item) => {
+                    if (item.udid !== udid) selected.add(item.udid);
+                });
+            } else {
+                selected.clear();
+            }
+            renderTargets();
+        };
+        selectAll.onclick = () => setSelection(true);
+        clearAll.onclick = () => setSelection(false);
+        refresh.onclick = renderTargets;
         enabled.onchange = () => {
             this.syncManager.setEnabled(enabled.checked);
-            select.disabled = !enabled.checked;
-            refreshTargets();
-            applyTargets();
+            selectAll.disabled = !enabled.checked;
+            clearAll.disabled = !enabled.checked;
+            renderTargets();
         };
-
-        select.disabled = true;
-        select.onchange = () => {
-            refreshTargets();
-            applyTargets();
-        };
-
-        refreshTargets();
-        holder.appendChild(select);
+        selectAll.disabled = true;
+        clearAll.disabled = true;
+        renderTargets();
         return holder;
     }
 
