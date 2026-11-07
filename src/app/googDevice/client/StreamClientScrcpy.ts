@@ -63,6 +63,7 @@ export class StreamClientScrcpy
     private fitToScreen?: boolean;
     private readonly streamReceiver: StreamReceiverScrcpy;
     private readonly syncManager = new MultiDeviceSyncManager();
+    private static activeMasters: Set<string> = new Set<string>();
     private deviceView?: HTMLElement;
     private syncControls?: HTMLElement;
     private pointerStart?: { x: number; y: number; t: number };
@@ -268,6 +269,7 @@ export class StreamClientScrcpy
         this.touchHandler?.release();
         this.touchHandler = undefined;
         this.syncManager.release();
+        StreamClientScrcpy.activeMasters.delete(this.params.udid);
         this.pointerStart = undefined;
 
         if (this.syncControls && this.syncControls.parentElement) {
@@ -458,20 +460,29 @@ export class StreamClientScrcpy
         holder.appendChild(count);
 
         // Checkboxes support ordinary clicks/taps; no Ctrl or Shift key required.
-        const selected = new Set<string>();
+        const storageKey = 'mirror-targets::' + udid;
+        let saved: string[] = [];
+        try {
+            const value = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            if (Array.isArray(value)) saved = value.filter((id) => typeof id === 'string');
+        } catch (error) {
+            console.warn(TAG, 'Could not load saved targets', error);
+        }
+        const selected = new Set<string>(saved);
         const applyTargets = (): void => {
             this.syncManager.setMasterUdid(udid);
             this.syncManager.setTargets(Array.from(selected).map((id) => ({ udid: id })));
-            count.textContent = selected.size + ' target device(s) selected';
+            count.textContent = selected.size + ' target device(s) selected' +
+                (enabled.checked ? ' — broadcasting enabled' : ' — broadcasting paused');
+            try { localStorage.setItem(storageKey, JSON.stringify(Array.from(selected))); } catch (error) {
+                console.warn(TAG, 'Could not save targets', error);
+            }
         };
 
         const renderTargets = (): void => {
             list.innerHTML = '';
             const streams = DeviceTracker.getKnownDeviceStreams().filter((item) => item.udid !== udid);
-            const available = new Set(streams.map((item) => item.udid));
-            Array.from(selected).forEach((id) => {
-                if (!available.has(id)) selected.delete(id);
-            });
+            // Keep offline selections so reconnecting devices retain their target assignments.
             streams.forEach((item) => {
                 const label = document.createElement('label');
                 label.style.display = 'flex';
@@ -515,6 +526,8 @@ export class StreamClientScrcpy
         refresh.onclick = renderTargets;
         enabled.onchange = () => {
             this.syncManager.setEnabled(enabled.checked);
+            if (enabled.checked) StreamClientScrcpy.activeMasters.add(udid);
+            else StreamClientScrcpy.activeMasters.delete(udid);
             selectAll.disabled = !enabled.checked;
             clearAll.disabled = !enabled.checked;
             renderTargets();
